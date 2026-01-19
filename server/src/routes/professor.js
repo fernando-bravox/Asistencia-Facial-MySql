@@ -80,9 +80,13 @@ function dateKeyInTZ(date, tz = "America/Guayaquil") {
 async function ensureSubjectOwner(subjectId, professorId) {
   const subject = await getById("subjects", subjectId);
   if (!subject) return { error: "Materia no encontrada", status: 404 };
-  if (subject.professorId !== professorId) return { error: "No eres dueño de esta materia", status: 403 };
+
+  const owner = subject.professorId ?? subject.professor_id;
+  if (String(owner) !== String(professorId)) return { error: "No eres dueño de esta materia", status: 403 };
+
   return { subject };
 }
+
 
 
 async function generateUniqueSubjectCode() {
@@ -260,28 +264,31 @@ profRouter.put("/subjects/:id/settings", async (req, res) => {
 
 
 // =========================
-// ENROLLMENTS (Firestore + Students Firestore)
+// ENROLLMENTS ( MySql + Students MySql )
 // =========================
 profRouter.get("/subjects/:id/enrollments", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  const snap = await db.collection("enrollments").where("subjectId", "==", req.params.id).get();
-  const enrollmentsRaw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // traer enrollments del subject desde MySQL
+  const enrollmentsRaw = await queryWhere("enrollments", "subject_id", "==", req.params.id);
 
   const enrollments = await Promise.all(
-    enrollmentsRaw.map(async (e) => {
-      const st = await getById("users", e.studentId);
+    (enrollmentsRaw || []).map(async (e) => {
+      const st = await getById("users", e.student_id);
       return {
-        ...e,
+        id: e.id,
+        subjectId: e.subject_id,
+        studentId: e.student_id,
+        createdAt: e.created_at,
         student: st
           ? {
               id: st.id,
               name: st.name,
               email: st.email,
-              studentCode: st.studentCode || "",
-              faceId: st.faceId || null,
-              faceDescriptor: st.faceDescriptor || null,
+              studentCode: st.studentCode || st.student_code || "",
+              faceId: st.faceId || st.face_id || null,
+              faceDescriptor: st.faceDescriptor || st.face_descriptor || null,
             }
           : null,
       };
@@ -290,6 +297,7 @@ profRouter.get("/subjects/:id/enrollments", async (req, res) => {
 
   res.json({ enrollments });
 });
+
 
 profRouter.post("/subjects/:id/enrollments", async (req, res) => {
   const { studentEmail, studentId } = req.body || {};
@@ -305,39 +313,41 @@ profRouter.post("/subjects/:id/enrollments", async (req, res) => {
     student = await findOne("users", "email", String(studentEmail).toLowerCase());
   }
 
-  if (!student || student.role !== "student") return res.status(404).json({ error: "Estudiante no encontrado" });
+  if (!student) return res.status(404).json({ error: "Estudiante no encontrado" });
 
-  // ✅ validar duplicado
-  const existsSnap = await db
-    .collection("enrollments")
-    .where("subjectId", "==", req.params.id)
-    .where("studentId", "==", student.id)
-    .limit(1)
-    .get();
+  const role = student.role || student.rol;
+  if (role !== "student") return res.status(404).json({ error: "Estudiante no encontrado" });
 
-  if (!existsSnap.empty) return res.status(409).json({ error: "Ya está matriculado" });
+  // ✅ validar duplicado en MySQL
+  const exists = await queryWhere("enrollments", "subject_id", "==", req.params.id);
+  const dup = (exists || []).some((x) => String(x.student_id) === String(student.id));
+  if (dup) return res.status(409).json({ error: "Ya está matriculado" });
 
   const enrollmentId = nanoid();
-  const enr = {
-    subjectId: req.params.id,
-    studentId: student.id,
-    createdAt: new Date().toISOString(),
-  };
+  const nowISO = new Date().toISOString();
 
-  await db.collection("enrollments").doc(enrollmentId).set(enr);
-  res.status(201).json({ enrollment: { id: enrollmentId, ...enr } });
+  await upsert("enrollments", enrollmentId, {
+    subject_id: req.params.id,
+    student_id: student.id,
+    created_at: nowISO,
+  });
+
+  const enrollment = await getById("enrollments", enrollmentId);
+  res.status(201).json({ enrollment });
 });
+
 
 profRouter.delete("/subjects/:id/enrollments/:enrollmentId", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  await db.collection("enrollments").doc(req.params.enrollmentId).delete();
+  await remove("enrollments", req.params.enrollmentId);
   res.json({ ok: true });
 });
 
+
 // =========================
-// ATTENDANCE (Firestore) - para que scan funcione con schedules/settings/enrollments Firestore
+// ATTENDANCE ( MySql) - para que scan funcione con schedules/settings/enrollments Firestore
 // =========================
 profRouter.get("/subjects/:id/attendance", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
@@ -347,37 +357,48 @@ profRouter.get("/subjects/:id/attendance", async (req, res) => {
   const fromDate = from ? new Date(from) : null;
   const toDate = to ? new Date(to) : null;
 
-  let q = db.collection("attendance").where("subjectId", "==", req.params.id);
+  let items = await queryWhere("attendance", "subject_id", "==", req.params.id);
+  items = items || [];
 
-  // (filtros en memoria por simplicidad)
-  const snap = await q.get();
-  let items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-  if (onlyPending === "true") items = items.filter((a) => a.approvalStatus === "pending");
+  if (onlyPending === "true") items = items.filter((a) => (a.approval_status || a.approvalStatus) === "pending");
   if (fromDate) items = items.filter((a) => new Date(a.timestamp) >= fromDate);
   if (toDate) items = items.filter((a) => new Date(a.timestamp) <= toDate);
 
   const enriched = await Promise.all(
     items.map(async (a) => {
-      const st = await getById("users", a.studentId);
-      return { ...a, student: st ? { id: st.id, name: st.name, email: st.email, studentCode: st.studentCode || "" } : null };
+      const st = await getById("users", a.student_id);
+      return {
+        id: a.id,
+        subjectId: a.subject_id,
+        studentId: a.student_id,
+        timestamp: a.timestamp,
+        method: a.method,
+        status: a.status,
+        approvalStatus: a.approval_status || a.approvalStatus,
+        sessionKey: a.session_key || a.sessionKey,
+        createdAt: a.created_at,
+        student: st
+          ? { id: st.id, name: st.name, email: st.email, studentCode: st.studentCode || st.student_code || "" }
+          : null,
+      };
     })
   );
 
   res.json({ attendance: enriched });
 });
 
+
 profRouter.delete("/subjects/:id/attendance/:attendanceId", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  const ref = db.collection("attendance").doc(req.params.attendanceId);
-  const snap = await ref.get();
-  if (!snap.exists) return res.status(404).json({ error: "Registro no encontrado" });
+  const row = await getById("attendance", req.params.attendanceId);
+  if (!row) return res.status(404).json({ error: "Registro no encontrado" });
 
-  await ref.delete();
+  await remove("attendance", req.params.attendanceId);
   res.json({ ok: true });
 });
+
 
 profRouter.put("/subjects/:id/attendance/:attendanceId/timestamp", async (req, res) => {
   const { timestamp } = req.body || {};
@@ -389,13 +410,14 @@ profRouter.put("/subjects/:id/attendance/:attendanceId/timestamp", async (req, r
   const parsed = new Date(timestamp);
   if (isNaN(parsed.getTime())) return res.status(400).json({ error: "timestamp inválido" });
 
-  await db.collection("attendance").doc(req.params.attendanceId).update({
+  await upsert("attendance", req.params.attendanceId, {
     timestamp: parsed.toISOString(),
-    updatedAt: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   });
 
   res.json({ ok: true });
 });
+
 
 profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
   const { studentId, status } = req.body || {};
@@ -405,42 +427,42 @@ profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
   if (check.error) return res.status(check.status).json({ error: check.error });
 
   const student = await getById("users", studentId);
-  if (!student || student.role !== "student") return res.status(404).json({ error: "Estudiante no encontrado" });
+  const role = student?.role || student?.rol;
+  if (!student || role !== "student") return res.status(404).json({ error: "Estudiante no encontrado" });
 
   const attendanceId = nanoid();
-  const attendance = {
-    subjectId: req.params.id,
-    studentId,
-    timestamp: new Date().toISOString(),
+  const nowISO = new Date().toISOString();
+
+  await upsert("attendance", attendanceId, {
+    subject_id: req.params.id,
+    student_id: studentId,
+    timestamp: nowISO,
     method: "manual",
     status: status || "present",
-    approvalStatus: "approved",
-    createdAt: new Date().toISOString(),
-  };
-
-  await db.collection("attendance").doc(attendanceId).set(attendance);
-
-try {
-  const subjectSnap = await db.collection("subjects").doc(req.params.id).get(); // ✅ AQUÍ
-  const subjectName = subjectSnap.exists ? (subjectSnap.data()?.name || "") : "";
-
-  await sendAttendanceEmail({
-    to: student.email,
-    studentName: student.name,
-    subjectName,
-    status: attendance.status,
-    timestampISO: attendance.createdAt,
+    approval_status: "approved",
+    created_at: nowISO,
   });
 
-  console.log("✅ Correo enviado a:", student.email);
-} catch (error) {
-  console.error("❌ Error enviando correo de asistencia:", error); // mejor que solo error.message
-}
+  // subjectName desde MySQL
+  const subject = await getById("subjects", req.params.id);
+  const subjectName = subject?.name || "";
 
+  try {
+    await sendAttendanceEmail({
+      to: student.email,
+      studentName: student.name,
+      subjectName,
+      status: status || "present",
+      timestampISO: nowISO,
+    });
+  } catch (error) {
+    console.error("❌ Error enviando correo (manual):", error);
+  }
 
-  res.status(201).json({ attendance: { id: attendanceId, ...attendance } });
-  
+  const saved = await getById("attendance", attendanceId);
+  res.status(201).json({ attendance: saved });
 });
+
 
 // Scan mark (profesor) ✅ con Firestore
 profRouter.post("/subjects/:id/attendance/scan", async (req, res) => {
@@ -454,22 +476,27 @@ profRouter.post("/subjects/:id/attendance/scan", async (req, res) => {
 
   const subjectId = req.params.id;
 
-  // schedules
-  const schSnap = await db.collection("schedules").where("subjectId", "==", subjectId).get();
-  const subjectSchedules = schSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // schedules desde MySQL
+  const subjectSchedules = await queryWhere("schedules", "subject_id", "==", subjectId);
 
-  // settings
-  const setSnap = await db.collection("settings").doc(subjectId).get();
-  const settings = setSnap.exists ? setSnap.data() : { graceMinutes: 10 };
+  // settings desde MySQL
+  const setRow = await getById("settings", subjectId);
+  const settings = setRow ? { graceMinutes: setRow.grace_minutes ?? setRow.graceMinutes ?? 10 } : { graceMinutes: 10 };
 
   let status = null;
   let matchedSc = null;
 
-  for (const sc of subjectSchedules) {
-    const m = matchSchedule({ schedule: sc, timestampISO: ts, graceMinutes: settings.graceMinutes });
+  for (const sc of subjectSchedules || []) {
+    const schedule = {
+      dayOfWeek: sc.day_of_week ?? sc.dayOfWeek,
+      startTime: sc.start_time ?? sc.startTime,
+      endTime: sc.end_time ?? sc.endTime,
+    };
+
+    const m = matchSchedule({ schedule, timestampISO: ts, graceMinutes: settings.graceMinutes });
     if (m.match) {
       status = m.status;
-      matchedSc = sc;
+      matchedSc = schedule;
       break;
     }
   }
@@ -478,78 +505,71 @@ profRouter.post("/subjects/:id/attendance/scan", async (req, res) => {
     return res.status(202).json({ ok: true, message: "No hay clase en curso para esta materia." });
   }
 
-  // buscar estudiante por faceId
-  const student = await findOne("users", "faceId", String(faceId).trim());
-  if (!student) return res.status(404).json({ error: "No existe estudiante con ese faceId" });
+  // buscar estudiante por faceId en MySQL
+  const student = await findOne("users", "face_id", String(faceId).trim());
+  const studentAlt = student ? student : await findOne("users", "faceId", String(faceId).trim());
+  const st = studentAlt;
 
-  // validar matrícula
-  const enrSnap = await db
-    .collection("enrollments")
-    .where("subjectId", "==", subjectId)
-    .where("studentId", "==", student.id)
-    .limit(1)
-    .get();
+  if (!st) return res.status(404).json({ error: "No existe estudiante con ese faceId" });
 
-  if (enrSnap.empty) return res.status(403).json({ error: "El estudiante no está matriculado en esta materia" });
+  // validar matrícula en MySQL
+  const enr = await queryWhere("enrollments", "subject_id", "==", subjectId);
+  const enrolled = (enr || []).some((x) => String(x.student_id) === String(st.id));
+  if (!enrolled) return res.status(403).json({ error: "El estudiante no está matriculado en esta materia" });
 
-  // evitar duplicado por clase
+  // evitar duplicado
   const todayKey = dateKeyInTZ(new Date(ts));
   const sessionKey = `${subjectId}|${todayKey}|${matchedSc.dayOfWeek}|${matchedSc.startTime}-${matchedSc.endTime}`;
 
-  const dupSnap = await db
-    .collection("attendance")
-    .where("subjectId", "==", subjectId)
-    .where("studentId", "==", student.id)
-    .where("sessionKey", "==", sessionKey)
-    .limit(1)
-    .get();
+  const attRows = await queryWhere("attendance", "subject_id", "==", subjectId);
+  const already = (attRows || []).some((a) => String(a.student_id) === String(st.id) && String(a.session_key || a.sessionKey) === sessionKey);
 
-  if (!dupSnap.empty) {
+  if (already) {
     return res.json({
       ok: true,
       alreadyMarked: true,
       message: "El estudiante ya fue registrado en esta clase.",
-      student: { id: student.id, name: student.name, email: student.email },
+      student: { id: st.id, name: st.name, email: st.email },
     });
   }
 
-const attendanceId = `${student.id}_${sessionKey}`.replace(/[|:\s]/g, "_");
+  const attendanceId = `${st.id}_${sessionKey}`.replace(/[|:\s]/g, "_");
+  const nowISO = new Date().toISOString();
 
-const attendance = {
-  subjectId,
-  studentId: student.id,
-  timestamp: ts,
-  method: "prof_device",
-  status,
-  approvalStatus: "approved",
-  sessionKey,
-  createdAt: new Date().toISOString(),
-};
-
-
-  await db.collection("attendance").doc(attendanceId).set(attendance);
-try {
-  const subjectSnap = await db.collection("subjects").doc(subjectId).get();
-  const subjectName = subjectSnap.exists ? (subjectSnap.data()?.name || "") : "";
-
-  await sendAttendanceEmail({
-    to: student.email,
-    studentName: student.name,
-    subjectName,
-    status: attendance.status,
-    timestampISO: attendance.createdAt,
+  await upsert("attendance", attendanceId, {
+    subject_id: subjectId,
+    student_id: st.id,
+    timestamp: ts,
+    method: "prof_device",
+    status,
+    approval_status: "approved",
+    session_key: sessionKey,
+    created_at: nowISO,
   });
 
-  console.log("✅ Correo enviado (scan) a:", student.email);
-} catch (error) {
-  console.error("❌ Error enviando correo (scan):", error);
-}
+  // subjectName desde MySQL
+  const subject = await getById("subjects", subjectId);
+  const subjectName = subject?.name || "";
+
+  try {
+    await sendAttendanceEmail({
+      to: st.email,
+      studentName: st.name,
+      subjectName,
+      status,
+      timestampISO: nowISO,
+    });
+  } catch (error) {
+    console.error("❌ Error enviando correo (scan):", error);
+  }
+
+  const saved = await getById("attendance", attendanceId);
 
   return res.status(201).json({
     ok: true,
     alreadyMarked: false,
-    stored: { id: attendanceId, ...attendance },
-    student: { id: student.id, name: student.name, email: student.email },
+    stored: saved,
+    student: { id: st.id, name: st.name, email: st.email },
   });
 });
 
@@ -558,9 +578,9 @@ profRouter.post("/subjects/:id/attendance/:attendanceId/approve", async (req, re
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  await db.collection("attendance").doc(req.params.attendanceId).update({
-    approvalStatus: "approved",
-    approvedAt: new Date().toISOString(),
+  await upsert("attendance", req.params.attendanceId, {
+    approval_status: "approved",
+    approved_at: new Date().toISOString(),
   });
 
   res.json({ ok: true });
@@ -570,15 +590,17 @@ profRouter.post("/subjects/:id/attendance/:attendanceId/reject", async (req, res
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  await db.collection("attendance").doc(req.params.attendanceId).update({
-    approvalStatus: "rejected",
-    rejectedAt: new Date().toISOString(),
+  await upsert("attendance", req.params.attendanceId, {
+    approval_status: "rejected",
+    rejected_at: new Date().toISOString(),
   });
 
   res.json({ ok: true });
 });
 
+
 // Export Excel
+// Export Excel (MySQL)
 profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
@@ -587,9 +609,14 @@ profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
   const fromDate = from ? new Date(from) : null;
   const toDate = to ? new Date(to) : null;
 
-  const snap = await db.collection("attendance").where("subjectId", "==", req.params.id).get();
-  let items = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((a) => a.approvalStatus !== "rejected");
+  // ✅ 1) Traer asistencia desde MySQL
+  let items = await queryWhere("attendance", "subject_id", "==", req.params.id);
+  items = items || [];
 
+  // ✅ 2) Excluir rechazados (snake_case)
+  items = items.filter((a) => (a.approval_status || a.approvalStatus) !== "rejected");
+
+  // ✅ 3) Filtros por fecha
   if (fromDate) items = items.filter((a) => new Date(a.timestamp) >= fromDate);
   if (toDate) items = items.filter((a) => new Date(a.timestamp) <= toDate);
 
@@ -607,15 +634,19 @@ profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
   ];
 
   for (const a of items) {
-    const st = await getById("users", a.studentId);
+    // ✅ en MySQL la FK suele ser student_id
+    const studentId = a.student_id || a.studentId;
+
+    const st = await getById("users", studentId);
+
     ws.addRow({
-      studentCode: st?.studentCode || "",
+      studentCode: st?.studentCode || st?.student_code || "",
       student: st?.name || "N/A",
       email: st?.email || "N/A",
       timestamp: a.timestamp,
       status: a.status,
       method: a.method,
-      approvalStatus: a.approvalStatus,
+      approvalStatus: a.approval_status || a.approvalStatus,
     });
   }
 
@@ -626,3 +657,4 @@ profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
   res.setHeader("Content-Disposition", `attachment; filename="asistencia_${req.params.id}.xlsx"`);
   res.send(Buffer.from(fileBuffer));
 });
+
