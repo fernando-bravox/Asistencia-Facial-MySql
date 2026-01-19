@@ -82,7 +82,7 @@ function sanitizeStudentCode(studentCode) {
 }
 
 // ============================
-// GET USERS (Firestore)
+// GET USERS ( MySql )
 // ============================
 adminRouter.get("/users", async (_req, res) => {
   const users = await listAll("users");
@@ -142,7 +142,7 @@ adminRouter.post("/faces", async (req, res) => {
 });
 
 // ============================
-// CREATE USER (Firestore)
+// CREATE USER ( MySql )
 // ============================
 adminRouter.post("/users", async (req, res) => {
   const { name, email, password, role, faceId, faceDescriptor, studentCode } = req.body || {};
@@ -159,6 +159,7 @@ adminRouter.post("/users", async (req, res) => {
 
   const cleanedFaceId = faceId ? sanitizeFaceId(faceId) : null;
   const cleanedDescriptor = sanitizeFaceDescriptor(faceDescriptor);
+const descriptorJson = cleanedDescriptor ? JSON.stringify(cleanedDescriptor) : null;
   const cleanedStudentCode = sanitizeStudentCode(studentCode); // ✅ agregado
 
   const id = nanoid();
@@ -173,7 +174,7 @@ const user = {
   studentCode: role === "student" ? (String(studentCode || "").trim() || "") : "",
 
   faceId: cleanedFaceId || null,
-  faceDescriptor: cleanedDescriptor || null,
+  faceDescriptor: descriptorJson,
   createdAt: new Date().toISOString(),
 };
  
@@ -215,7 +216,11 @@ const { name, role, faceId, password, faceDescriptor, studentCode } = req.body |
 
   if (typeof faceId !== "undefined") patch.faceId = faceId ? sanitizeFaceId(faceId) : null;
 
-  if (typeof faceDescriptor !== "undefined") patch.faceDescriptor = sanitizeFaceDescriptor(faceDescriptor);
+  if (typeof faceDescriptor !== "undefined") {
+  const cleaned = sanitizeFaceDescriptor(faceDescriptor);
+  patch.faceDescriptor = cleaned ? JSON.stringify(cleaned) : null;
+}
+
 
   if (password) patch.passwordHash = await hashPassword(password);
 if (typeof studentCode !== "undefined") {
