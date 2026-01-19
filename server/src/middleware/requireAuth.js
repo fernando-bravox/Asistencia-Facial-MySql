@@ -1,6 +1,6 @@
 // server/src/middleware/requireAuth.js
 import { verifyToken } from "../utils/auth.js";
-import { getById } from "../utils/firestoreDb.js";
+import { getById } from "../utils/mysqlDb.js";
 
 export function requireAuth() {
   return async (req, res, next) => {
