@@ -10,7 +10,7 @@ import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 
 import { matchSchedule } from "../utils/time.js";
 
-// ✅ Firestore helpers (para traer estudiantes reales)
+// ✅ MySQL helpers
 import { queryWhere, findOne, getById, upsert, remove } from "../utils/mysqlDb.js";
 
 export const profRouter = Router();
@@ -121,8 +121,11 @@ profRouter.get("/students", async (_req, res) => {
 // =========================
 profRouter.get("/subjects", async (req, res) => {
   try {
-    let subjects = await queryWhere("subjects", "professorId", "==", req.user.id);
-    subjects = (subjects || []).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    let subjects = await queryWhere("subjects", "professor_id", "==", req.user.id);
+subjects = (subjects || []).sort(
+  (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+);
+
     res.json({ subjects });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -197,7 +200,7 @@ profRouter.get("/subjects/:id/schedules", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  const schedules = await queryWhere("schedules", "subjectId", "==", req.params.id);
+const schedules = await queryWhere("schedules", "subject_id", "==", req.params.id);
   res.json({ schedules });
 });
 
@@ -241,8 +244,9 @@ profRouter.get("/subjects/:id/settings", async (req, res) => {
   if (check.error) return res.status(check.status).json({ error: check.error });
 
   const st = await getById("settings", req.params.id);
-  const settings = st ? { graceMinutes: st.graceMinutes } : { graceMinutes: 10 };
-  res.json({ settings });
+const grace = st?.grace_minutes ?? st?.graceMinutes ?? 10;
+res.json({ settings: { graceMinutes: Number(grace) } });
+
 });
 
 profRouter.put("/subjects/:id/settings", async (req, res) => {
@@ -347,8 +351,9 @@ profRouter.delete("/subjects/:id/enrollments/:enrollmentId", async (req, res) =>
 
 
 // =========================
-// ATTENDANCE ( MySql) - para que scan funcione con schedules/settings/enrollments Firestore
+// ATTENDANCE (MySQL)
 // =========================
+
 profRouter.get("/subjects/:id/attendance", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
@@ -464,7 +469,7 @@ profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
 });
 
 
-// Scan mark (profesor) ✅ con Firestore
+// Scan mark (profesor) ✅ MySQL
 profRouter.post("/subjects/:id/attendance/scan", async (req, res) => {
   const { faceId, timestamp } = req.body || {};
   if (!faceId) return res.status(400).json({ error: "faceId requerido" });
