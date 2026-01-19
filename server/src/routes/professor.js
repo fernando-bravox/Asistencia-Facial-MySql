@@ -111,19 +111,14 @@ profRouter.get("/students", async (_req, res) => {
   });
 });
 
+
 // =========================
-// SUBJECTS (Firestore)
+// SUBJECTS (MySQL)
 // =========================
 profRouter.get("/subjects", async (req, res) => {
   try {
-    // ✅ ordenado por createdAt (requiere índice compuesto)
-    const snap = await db
-      .collection("subjects")
-      .where("professorId", "==", req.user.id)
-      .orderBy("createdAt", "desc")
-      .get();
-
-    const subjects = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    let subjects = await queryWhere("subjects", "professorId", "==", req.user.id);
+    subjects = (subjects || []).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     res.json({ subjects });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -137,25 +132,24 @@ profRouter.post("/subjects", async (req, res) => {
 
     const code = await generateUniqueSubjectCode();
     const subjectId = nanoid();
+    const nowISO = new Date().toISOString();
 
-    const subject = {
+    await upsert("subjects", subjectId, {
       name: String(name).trim(),
-      code, // ✅ automático
+      code,
       room: room ? String(room).trim() : "",
-      professorId: req.user.id,
-      createdAt: new Date().toISOString(),
-    };
-
-    await db.collection("subjects").doc(subjectId).set(subject);
-
-    // ✅ settings por defecto
-    await db.collection("settings").doc(subjectId).set({
-      subjectId,
-      graceMinutes: 10,
-      updatedAt: new Date().toISOString(),
+      professor_id: req.user.id,
+      created_at: nowISO,
     });
 
-    res.status(201).json({ subject: { id: subjectId, ...subject } });
+    await upsert("settings", subjectId, {
+      subject_id: subjectId,
+      grace_minutes: 10,
+      updated_at: nowISO,
+    });
+
+    const subject = await getById("subjects", subjectId);
+    res.status(201).json({ subject });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -168,11 +162,10 @@ profRouter.put("/subjects/:id", async (req, res) => {
 
     const { name, room } = req.body || {};
     const patch = {};
-
     if (name) patch.name = String(name).trim();
     if (typeof room !== "undefined") patch.room = String(room || "").trim();
 
-    await db.collection("subjects").doc(req.params.id).update(patch);
+    await upsert("subjects", req.params.id, patch);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -184,56 +177,23 @@ profRouter.delete("/subjects/:id", async (req, res) => {
     const check = await ensureSubjectOwner(req.params.id, req.user.id);
     if (check.error) return res.status(check.status).json({ error: check.error });
 
-    const subjectId = req.params.id;
-
-    // ✅ borrar cascada (colecciones relacionadas)
-    const batches = [];
-    let batch = db.batch();
-    let ops = 0;
-
-    async function delWhere(col, field, value) {
-      const snap = await db.collection(col).where(field, "==", value).get();
-      for (const doc of snap.docs) {
-        batch.delete(doc.ref);
-        ops++;
-        if (ops >= 450) {
-          batches.push(batch.commit());
-          batch = db.batch();
-          ops = 0;
-        }
-      }
-    }
-
-    await delWhere("schedules", "subjectId", subjectId);
-    await delWhere("enrollments", "subjectId", subjectId);
-    await delWhere("attendance", "subjectId", subjectId);
-
-    // settings doc tiene id = subjectId
-    batch.delete(db.collection("settings").doc(subjectId));
-    ops++;
-
-    // subject doc
-    batch.delete(db.collection("subjects").doc(subjectId));
-    ops++;
-
-    batches.push(batch.commit());
-    await Promise.all(batches);
-
+    await remove("subjects", req.params.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+
+
 // =========================
-// SCHEDULES (Firestore)
+// SCHEDULES (MySQL)
 // =========================
 profRouter.get("/subjects/:id/schedules", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  const snap = await db.collection("schedules").where("subjectId", "==", req.params.id).get();
-  const schedules = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const schedules = await queryWhere("schedules", "subjectId", "==", req.params.id);
   res.json({ schedules });
 });
 
@@ -245,35 +205,39 @@ profRouter.post("/subjects/:id/schedules", async (req, res) => {
   if (check.error) return res.status(check.status).json({ error: check.error });
 
   const scheduleId = nanoid();
-  const schedule = {
-    subjectId: req.params.id,
-    dayOfWeek: Number(dayOfWeek),
-    startTime,
-    endTime,
-    createdAt: new Date().toISOString(),
-  };
+  const nowISO = new Date().toISOString();
 
-  await db.collection("schedules").doc(scheduleId).set(schedule);
-  res.status(201).json({ schedule: { id: scheduleId, ...schedule } });
+  await upsert("schedules", scheduleId, {
+    subject_id: req.params.id,
+    day_of_week: Number(dayOfWeek),
+    start_time: startTime,
+    end_time: endTime,
+    created_at: nowISO,
+  });
+
+  const schedule = await getById("schedules", scheduleId);
+  res.status(201).json({ schedule });
 });
 
 profRouter.delete("/subjects/:id/schedules/:scheduleId", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  await db.collection("schedules").doc(req.params.scheduleId).delete();
+  await remove("schedules", req.params.scheduleId);
   res.json({ ok: true });
 });
 
+
+
 // =========================
-// SETTINGS (Firestore)
+// SETTINGS (MySQL)
 // =========================
 profRouter.get("/subjects/:id/settings", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  const snap = await db.collection("settings").doc(req.params.id).get();
-  const settings = snap.exists ? snap.data() : { graceMinutes: 10 };
+  const st = await getById("settings", req.params.id);
+  const settings = st ? { graceMinutes: st.graceMinutes } : { graceMinutes: 10 };
   res.json({ settings });
 });
 
@@ -283,17 +247,17 @@ profRouter.put("/subjects/:id/settings", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  await db.collection("settings").doc(req.params.id).set(
-    {
-      subjectId: req.params.id,
-      graceMinutes: Number(graceMinutes || 10),
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+  const nowISO = new Date().toISOString();
+
+  await upsert("settings", req.params.id, {
+    subject_id: req.params.id,
+    grace_minutes: Number(graceMinutes || 10),
+    updated_at: nowISO,
+  });
 
   res.json({ ok: true });
 });
+
 
 // =========================
 // ENROLLMENTS (Firestore + Students Firestore)
