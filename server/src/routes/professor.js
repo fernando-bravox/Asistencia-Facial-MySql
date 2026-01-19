@@ -11,7 +11,7 @@ import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { matchSchedule } from "../utils/time.js";
 
 // ✅ Firestore helpers (para traer estudiantes reales)
-import { queryWhere, findOne, getById } from "../utils/mysqlDb.js";
+import { queryWhere, findOne, getById, upsert, remove } from "../utils/mysqlDb.js";
 
 export const profRouter = Router();
 profRouter.use(requireAuth(), requireRole("professor"));
@@ -76,8 +76,6 @@ function dateKeyInTZ(date, tz = "America/Guayaquil") {
   const d = parts.find((p) => p.type === "day")?.value;
   return `${y}-${m}-${d}`;
 }
-
-import { getById, findOne, queryWhere, upsert, remove } from "../utils/mysqlDb.js";
 
 async function ensureSubjectOwner(subjectId, professorId) {
   const subject = await getById("subjects", subjectId);
