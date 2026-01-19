@@ -1,0 +1,9 @@
+{
+  "folders": [
+    { "path": "server" },
+    { "path": "client" }
+  ],
+  "settings": {
+    "editor.formatOnSave": true
+  }
+}

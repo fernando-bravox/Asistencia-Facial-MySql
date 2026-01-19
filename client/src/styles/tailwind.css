@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* ====== PALETA / BASE GLOBAL ====== */
+@layer base {
+  :root {
+    --bg-0: 0 0% 0%;
+    --bg-1: 222 47% 7%;
+    --panel: 222 35% 10%;
+    --stroke: 0 0% 100% / 0.10;
+
+    --text: 0 0% 98%;
+    --muted: 0 0% 85% / 0.75;
+
+    --red: 0 84% 60%;
+    --red-2: 0 72% 45%;
+  }
+
+  html, body, #root {
+    height: 100%;
+  }
+
+  body {
+    @apply text-white;
+    background: radial-gradient(1200px 600px at 10% 10%, rgba(255,0,0,0.12), transparent 60%),
+                linear-gradient(to bottom, rgb(0,0,0), rgb(2,6,23), rgb(15,23,42));
+  }
+}
+
+/* ====== COMPONENTES REUTILIZABLES (para TODAS las pantallas) ====== */
+@layer components {
+  .page {
+    @apply min-h-screen;
+  }
+
+  .container-app {
+    @apply mx-auto w-full max-w-6xl px-4 py-6;
+  }
+
+  .card {
+    @apply rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md p-5 shadow-lg;
+  }
+
+  .section-title {
+    @apply text-lg sm:text-xl font-semibold;
+  }
+
+  .muted {
+    @apply text-white/70;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-white/80 mb-1;
+  }
+
+  .input, select, textarea {
+    @apply w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white
+           outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/40;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold
+           border border-white/10 bg-white/5 hover:bg-white/10 transition
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply border-red-500/30 bg-red-600/90 hover:bg-red-600 text-white shadow;
+  }
+
+  .btn-danger {
+    @apply border-red-500/40 bg-red-600/90 hover:bg-red-700 text-white;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold border border-white/10 bg-white/5;
+  }
+
+  .badge-red {
+    @apply border-red-500/30 bg-red-500/15 text-red-200;
+  }
+
+  .table-wrap {
+    @apply w-full overflow-x-auto rounded-xl border border-white/10;
+  }
+
+  .table-scroll {
+    @apply max-h-[60vh] overflow-y-auto;
+  }
+
+  .table {
+    @apply w-full text-sm min-w-[900px];
+  }
+
+  .th {
+    @apply px-3 py-3 text-left whitespace-nowrap bg-white/5;
+  }
+
+  .td {
+    @apply px-3 py-3 whitespace-nowrap border-t border-white/10;
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "RsmNNGR5mRcP9P0DvRJjQ": {
+    "subjectId": "xBxGw3_BLn2aCH-hoFxbC",
+    "dayOfWeek": 1,
+    "startTime": "13:00",
+    "endTime": "15:00",
+    "createdAt": "2026-01-11T20:29:00.822Z"
+  },
+  "ffs2t6PhHiVVxYGbkgUEY": {
+    "subjectId": "xBxGw3_BLn2aCH-hoFxbC",
+    "dayOfWeek": 3,
+    "startTime": "17:17",
+    "endTime": "18:00",
+    "createdAt": "2026-01-14T22:17:26.017Z"
+  },
+  "g7LzurHabKpBeMEYHFikZ": {
+    "subjectId": "XwfL-nJAQQaf31tETZ1Ah",
+    "dayOfWeek": 5,
+    "startTime": "13:00",
+    "endTime": "15:00",
+    "createdAt": "2026-01-16T07:00:37.433Z"
+  },
+  "tZARzvF8xdRYe6Xg8ibzW": {
+    "subjectId": "xBxGw3_BLn2aCH-hoFxbC",
+    "dayOfWeek": 0,
+    "startTime": "16:50",
+    "endTime": "19:00",
+    "createdAt": "2026-01-18T21:51:11.685Z"
+  },
+  "zBQVWIgEPSxP9ScziiaeN": {
+    "subjectId": "xBxGw3_BLn2aCH-hoFxbC",
+    "dayOfWeek": 5,
+    "startTime": "17:10",
+    "endTime": "18:00",
+    "createdAt": "2026-01-14T22:14:50.372Z"
+  }
+}

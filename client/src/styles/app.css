@@ -1,0 +1,606 @@
+:root{
+  /* Fondo */
+  --bg: #f7f9fc;           
+  --bg2:#eef3fb;          
+
+  /* Superficies */
+  --card:#ffffff;
+  --surface:#f5f8fd;
+
+  /* Texto */
+  --text:#0f172a;          
+  --muted:#6b7c93;         
+  --muted2:#9aa9bd;        
+
+  /* Bordes y sombras */
+  --border: rgba(15, 23, 42, 0.08);
+  --border2: rgba(15, 23, 42, 0.14);
+  --divider: rgba(15, 23, 42, 0.08);
+  --shadow: 0 12px 28px rgba(15,23,42,.06);
+  --shadow2: 0 8px 18px rgba(15,23,42,.08);
+
+  /* Azul pastel principal */
+  --primary: #5b8cff;       
+  --primaryDark:#3f6de0;
+  --primarySoft:#e6efff;
+
+  /* Celeste pastel */
+  --secondary:#7ecbff;     
+  --secondaryDark:#4fb4f5;
+
+  /* Danger (rojo pastel SOLO para eliminar/logout) */
+  --danger:#f87171;
+  --dangerDark:#ef4444;
+  --dangerSoft:#fee2e2;
+
+  /* Focus */
+  --focus:#5b8cff;
+  --focusRing: rgba(91,140,255,.25);
+
+  /* Inputs */
+  --inputBg:#ffffff;
+  --inputBorder: rgba(15,23,42,.14);
+  --inputBorderHover: rgba(15,23,42,.28);
+
+  /* Radio */
+  --radius:16px;
+  --radius2:12px;
+
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+}
+
+
+*{ box-sizing:border-box; }
+html, body { height: 100%; }
+body{
+  margin:0;
+  background: linear-gradient(180deg, var(--bg), var(--bg2));
+  color:var(--text);
+}
+a{ color:inherit; text-decoration:none; }
+
+/* =========================
+   TITULOS / TEXTO
+   ========================= */
+h1,h2,h3{ margin:0 0 10px; }
+
+.title{
+  font-weight: 800;
+  letter-spacing: .02em;
+  color: var(--text);
+}
+.subtitle{
+  color: var(--muted);
+  line-height: 1.4;
+}
+.sectionTitle{
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--muted);
+}
+.muted{ color: var(--muted); }
+.muted2{ color: var(--muted2); }
+
+/* =========================
+   LAYOUT
+   ========================= */
+.container{
+  max-width:1200px;
+  margin:0 auto;
+  padding:24px;
+}
+.row{ display:flex; gap:16px; flex-wrap:wrap; }
+.col{ flex:1; min-width:260px; }
+
+/* =========================
+   CARD
+   ========================= */
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.cardDivider{
+  height:1px;
+  background: linear-gradient(90deg, rgba(15,23,42,.12), rgba(15,23,42,.05), transparent);
+  margin: 12px 0 14px;
+}
+
+/* =========================
+   BOTONES
+   Azul por defecto, rojo SOLO danger
+   ========================= */
+.btn{
+  background: linear-gradient(135deg, var(--primary), var(--primaryDark));
+  border:1px solid rgba(0,0,0,.06);
+  color:white;
+  padding:10px 16px;
+  border-radius: 12px;
+  cursor:pointer;
+  font-weight: 800;
+  box-shadow: 0 10px 18px rgba(37,99,235,.18);
+  transition: transform .08s ease, filter .12s ease, box-shadow .12s ease;
+}
+.btn:hover{ filter: brightness(1.03); }
+.btn:active{ transform: translateY(1px); }
+.btn:disabled{ opacity:.6; cursor:not-allowed; box-shadow:none; }
+
+/* Botón secundario (blanco) */
+.btn.secondary{
+  background: #fff;
+  color: var(--text);
+  border:1px solid var(--border2);
+  box-shadow: var(--shadow2);
+}
+.btn.secondary:hover{
+  border-color: rgba(15,23,42,.28);
+}
+
+/* Botón celeste (opcional) */
+.btn.info{
+  background: linear-gradient(135deg, var(--secondary), var(--secondaryDark));
+  box-shadow: 0 10px 18px rgba(14,165,233,.16);
+}
+
+/* Danger SOLO para eliminar / cerrar sesión */
+.btn.danger{
+  background: linear-gradient(135deg, var(--danger), var(--dangerDark));
+  box-shadow: 0 10px 18px rgba(220,38,38,.16);
+}
+
+/* =========================
+   INPUTS (sin rojo)
+   ========================= */
+.label{
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+  margin-bottom: 6px;
+  display:block;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.input, select{
+  width:100%;
+  padding: 11px 12px;
+  border-radius: var(--radius2);
+  border: 1px solid var(--inputBorder);
+  background: var(--inputBg);
+  color: var(--text);
+  outline:none;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.input:hover, select:hover{ border-color: var(--inputBorderHover); }
+.input:focus, select:focus{
+  border-color: var(--focus);
+  box-shadow: 0 0 0 4px var(--focusRing);
+}
+.input::placeholder{ color: rgba(100,116,139,.75); }
+
+/* =========================
+   TABLAS (divisores + zebra + hover)
+   ========================= */
+.tableWrap{
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.table{
+  width:100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Cabecera */
+.table thead th{
+  font-size: 12px;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface);
+  padding: 12px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+/* Celdas + divisores claros */
+.table td{
+  padding: 12px 12px;
+  border-bottom: 1px solid rgba(15,23,42,.08);
+  vertical-align: middle;
+}
+
+/* Zebra */
+.table tbody tr:nth-child(even){
+  background: rgba(15,23,42,.015);
+}
+
+/* Hover azul suave (limpio) */
+.table tbody tr:hover{
+  background: rgba(37,99,235,.06);
+}
+
+/* Última fila sin borde */
+.table tbody tr:last-child td{ border-bottom: none; }
+
+/* =========================
+   BADGES (azules)
+   ========================= */
+.badge{
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  border: 1px solid rgba(37,99,235,.18);
+  background: rgba(37,99,235,.10);
+  color: #1d4ed8;
+}
+.badge.danger{
+  border: 1px solid rgba(220,38,38,.18);
+  background: rgba(220,38,38,.10);
+  color: #991b1b;
+}
+
+/* =========================
+   TOAST
+   ========================= */
+.toast{
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fff;
+  box-shadow: var(--shadow2);
+}
+.toast.ok{ border-color: rgba(34,197,94,.25); }
+.toast.err{ border-color: rgba(220,38,38,.25); }
+
+/* =========================
+   NAV / TOPBAR (si usas .nav)
+   ========================= */
+.nav{ display:flex; gap:10px; flex-wrap:wrap; margin:12px 0 18px; }
+.nav a{
+  padding:8px 12px;
+  border-radius:12px;
+  border:1px solid var(--border);
+  color:var(--muted);
+  background: #fff;
+}
+.nav a.active{
+  color: var(--primaryDark);
+  border-color: rgba(37,99,235,.25);
+  background: rgba(37,99,235,.08);
+}
+
+/* Divisor */
+hr{ border:none; border-top:1px solid var(--border); margin:16px 0; }
+
+
+/* =========================
+   FOOTER CORPORATIVO AZUL
+   ========================= */
+
+.app-footer{
+  background: linear-gradient(135deg, #1e40af, #2563eb, #0ea5e9);
+  color: white;
+  box-shadow: 0 -10px 30px rgba(37,99,235,.25);
+}
+
+.app-footer .footer-inner{
+  max-width:1200px;
+  margin:0 auto;
+  padding:18px 24px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+}
+
+/* Marca */
+.footer-brand{
+  display:flex;
+  flex-direction:column;
+}
+.footer-brand .app-name{
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.footer-brand .app-sub{
+  font-size: 12px;
+  opacity:.85;
+}
+
+/* Usuario */
+.footer-user{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+/* Avatar */
+.footer-avatar{
+  width:42px;
+  height:42px;
+  border-radius:999px;
+  border:2px solid rgba(255,255,255,.4);
+  object-fit:cover;
+  background:#fff;
+}
+
+/* Texto usuario */
+.footer-user-info{
+  display:flex;
+  flex-direction:column;
+  text-align:right;
+}
+.footer-user-info .name{
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.footer-user-info .email{
+  font-size:12px;
+  opacity:.85;
+}
+
+/* Responsive */
+@media (max-width: 640px){
+  .app-footer .footer-inner{
+    flex-direction:column;
+    text-align:center;
+  }
+  .footer-user-info{
+    text-align:center;
+  }
+}
+/* =========================
+   TOPBAR (HEADER) AZUL
+   ========================= */
+.app-topbar{
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: linear-gradient(135deg, #1e40af, #2563eb, #0ea5e9);
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(37,99,235,.25);
+}
+
+.app-topbar .topbar-inner{
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Marca izquierda */
+.topbar-brand{
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.topbar-brand .app-name{
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.topbar-brand .app-sub{
+  font-size: 12px;
+  opacity: .9;
+}
+
+/* Usuario derecha */
+.topbar-user{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-avatar{
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,.45);
+  object-fit: cover;
+  background: #fff;
+}
+
+.topbar-user-info{
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+  line-height: 1.1;
+}
+
+.topbar-user-info .name{
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .10em;
+}
+
+.topbar-user-info .email{
+  font-size: 12px;
+  opacity: .9;
+}
+
+/* Botón logout */
+.topbar-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-left: 10px;
+}
+
+.btn-logout{
+  border: 1px solid rgba(255,255,255,.35);
+  background: rgba(255,255,255,.12);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .15s ease;
+}
+
+.btn-logout:hover{
+  background: rgba(255,255,255,.20);
+}
+
+/* Responsive */
+@media (max-width: 640px){
+  .app-topbar .topbar-inner{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .topbar-user{
+    justify-content: center;
+  }
+  .topbar-user-info{
+    text-align: center;
+  }
+  .topbar-actions{
+    justify-content: center;
+    margin-left: 0;
+  }
+}
+
+/* =========================
+   FOOTER CORPORATIVO AZUL
+   ========================= */
+.app-footer{
+  background: linear-gradient(135deg, #1e40af, #2563eb, #0ea5e9);
+  color: white;
+  box-shadow: 0 -10px 30px rgba(37,99,235,.25);
+}
+
+.app-footer .footer-inner{
+  max-width:1200px;
+  margin:0 auto;
+  padding:18px 24px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+}
+
+.footer-brand{
+  display:flex;
+  flex-direction:column;
+}
+.footer-brand .app-name{
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.footer-brand .app-sub{
+  font-size: 12px;
+  opacity:.88;
+}
+
+.footer-user{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.footer-avatar{
+  width:42px;
+  height:42px;
+  border-radius:999px;
+  border:2px solid rgba(255,255,255,.4);
+  object-fit:cover;
+  background:#fff;
+}
+
+.footer-user-info{
+  display:flex;
+  flex-direction:column;
+  text-align:right;
+  line-height: 1.1;
+}
+.footer-user-info .name{
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.10em;
+}
+.footer-user-info .email{
+  font-size:12px;
+  opacity:.88;
+}
+
+@media (max-width: 640px){
+  .app-footer .footer-inner{
+    flex-direction:column;
+    text-align:center;
+  }
+  .footer-user-info{
+    text-align:center;
+  }
+}
+/* ==============================
+   FUENTE ÚNICA (GLOBAL REAL)
+   ============================== */
+
+/* 1) Root + body */
+:root, body{
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
+}
+
+/* 2) Todo elemento + controles */
+*, *::before, *::after,
+button, input, select, textarea,
+table, th, td, label, a, p, span, div, h1, h2, h3, h4, h5, h6{
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif !important;
+}
+
+/* ==============================
+   ESTILO UNIFICADO DE TEXTOS
+   ============================== */
+
+/* Títulos grandes (como “Administración”) */
+.h1{
+  font-weight: 900;
+  letter-spacing: .02em;
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+/* Subtítulo */
+.p-sub{
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* Título de sección (como “Crear usuario”) */
+.h2{
+  font-weight: 800;
+  letter-spacing: .01em;
+  color: var(--text);
+  font-size: 18px;
+  text-transform: uppercase;
+}
+
+/* Labels (NOMBRE, EMAIL, etc.) */
+.form-label{
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+  letter-spacing: .10em;
+  text-transform: uppercase;
+}
