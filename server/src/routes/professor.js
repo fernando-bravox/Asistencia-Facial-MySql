@@ -7,7 +7,7 @@ import { spawn } from "child_process";
 
 
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
-import { getFirestore } from "../utils/firebaseAdmin.js";
+
 import { matchSchedule } from "../utils/time.js";
 
 // ✅ Firestore helpers (para traer estudiantes reales)
@@ -16,7 +16,8 @@ import { queryWhere, findOne, getById } from "../utils/mysqlDb.js";
 export const profRouter = Router();
 profRouter.use(requireAuth(), requireRole("professor"));
 
-const db = getFirestore();
+
+
 // =========================
 // ✅ STREAM TAPO (RTSP -> MJPEG) para usar en el frontend
 // =========================
@@ -76,25 +77,25 @@ function dateKeyInTZ(date, tz = "America/Guayaquil") {
   return `${y}-${m}-${d}`;
 }
 
+import { getById, findOne, queryWhere, upsert, remove } from "../utils/mysqlDb.js";
+
 async function ensureSubjectOwner(subjectId, professorId) {
-  const ref = db.collection("subjects").doc(subjectId);
-  const snap = await ref.get();
-  if (!snap.exists) return { error: "Materia no encontrada", status: 404 };
-  const subject = { id: snap.id, ...snap.data() };
+  const subject = await getById("subjects", subjectId);
+  if (!subject) return { error: "Materia no encontrada", status: 404 };
   if (subject.professorId !== professorId) return { error: "No eres dueño de esta materia", status: 403 };
   return { subject };
 }
 
+
 async function generateUniqueSubjectCode() {
-  // SUB-XXXXX
   for (let i = 0; i < 10; i++) {
     const code = `SUB-${nanoid(5).toUpperCase()}`;
-    const q = await db.collection("subjects").where("code", "==", code).limit(1).get();
-    if (q.empty) return code;
+    const exists = await findOne("subjects", "code", code);
+    if (!exists) return code;
   }
-  // fallback
   return `SUB-${nanoid(8).toUpperCase()}`;
 }
+
 
 // =========================
 // ✅ LISTAR ESTUDIANTES (ComboBox)
