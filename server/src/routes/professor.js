@@ -274,25 +274,24 @@ profRouter.get("/subjects/:id/enrollments", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
 
-  // traer enrollments del subject desde MySQL
   const enrollmentsRaw = await queryWhere("enrollments", "subject_id", "==", req.params.id);
 
   const enrollments = await Promise.all(
     (enrollmentsRaw || []).map(async (e) => {
-      const st = await getById("users", e.student_id);
+      const st = await getById("users", e.studentId); // ✅ camelCase
       return {
         id: e.id,
-        subjectId: e.subject_id,
-        studentId: e.student_id,
-        createdAt: e.created_at,
+        subjectId: e.subjectId,     // ✅ camelCase
+        studentId: e.studentId,     // ✅ camelCase
+        createdAt: e.createdAt,     // ✅ camelCase
         student: st
           ? {
               id: st.id,
               name: st.name,
               email: st.email,
-              studentCode: st.studentCode || st.student_code || "",
-              faceId: st.faceId || st.face_id || null,
-              faceDescriptor: st.faceDescriptor || st.face_descriptor || null,
+              studentCode: st.studentCode || "",
+              faceId: st.faceId || null,
+              faceDescriptor: st.faceDescriptor || null,
             }
           : null,
       };
@@ -301,6 +300,7 @@ profRouter.get("/subjects/:id/enrollments", async (req, res) => {
 
   res.json({ enrollments });
 });
+
 
 
 profRouter.post("/subjects/:id/enrollments", async (req, res) => {
@@ -371,17 +371,17 @@ profRouter.get("/subjects/:id/attendance", async (req, res) => {
 
   const enriched = await Promise.all(
     items.map(async (a) => {
-      const st = await getById("users", a.student_id);
+      const st = await getById("users", a.studentId);
       return {
         id: a.id,
-        subjectId: a.subject_id,
-        studentId: a.student_id,
+        subjectId: a.subjectId,
+studentId: a.studentId,
         timestamp: a.timestamp,
         method: a.method,
         status: a.status,
         approvalStatus: a.approval_status || a.approvalStatus,
         sessionKey: a.session_key || a.sessionKey,
-        createdAt: a.created_at,
+        createdAt: a.createdAt,
         student: st
           ? { id: st.id, name: st.name, email: st.email, studentCode: st.studentCode || st.student_code || "" }
           : null,
@@ -519,7 +519,7 @@ profRouter.post("/subjects/:id/attendance/scan", async (req, res) => {
 
   // validar matrícula en MySQL
   const enr = await queryWhere("enrollments", "subject_id", "==", subjectId);
-  const enrolled = (enr || []).some((x) => String(x.student_id) === String(st.id));
+  const enrolled = (enr || []).some((x) => String(x.studentId) === String(st.id));
   if (!enrolled) return res.status(403).json({ error: "El estudiante no está matriculado en esta materia" });
 
   // evitar duplicado
@@ -527,7 +527,7 @@ profRouter.post("/subjects/:id/attendance/scan", async (req, res) => {
   const sessionKey = `${subjectId}|${todayKey}|${matchedSc.dayOfWeek}|${matchedSc.startTime}-${matchedSc.endTime}`;
 
   const attRows = await queryWhere("attendance", "subject_id", "==", subjectId);
-  const already = (attRows || []).some((a) => String(a.student_id) === String(st.id) && String(a.session_key || a.sessionKey) === sessionKey);
+  const already = (attRows || []).some((a) => String(a.studentId) === String(st.id) && String(a.session_key || a.sessionKey) === sessionKey);
 
   if (already) {
     return res.json({
