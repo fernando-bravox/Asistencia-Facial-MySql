@@ -307,7 +307,8 @@ export async function upsert(table, id, data) {
   // resto de tablas con id
   const dbData = mapFieldsToDb(data);
 
-  const cols = Object.keys(dbData);
+  const cols = Object.keys(dbData).filter((c) => c !== "id");
+
   const values = cols.map((c) => dbData[c]);
 
   const colSql = cols.map((c) => `\`${c}\``).join(",");

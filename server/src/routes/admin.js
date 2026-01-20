@@ -111,10 +111,16 @@ async function findDuplicateFaceDescriptor(incomingDescriptor, excludeUserId) {
 }
 
 function sanitizeStudentCode(studentCode) {
-  if (typeof studentCode === "undefined" || studentCode === null) return null;
+  if (studentCode === undefined || studentCode === null) return null;
+
   const c = String(studentCode).trim();
-  return c.length ? c.slice(0, 40) : null;
+
+  // ✅ solo 4 dígitos exactos
+  if (!/^\d{4}$/.test(c)) return null;
+
+  return c; // se guarda como "0123" si aplica
 }
+
 
 // ============================
 // GET USERS ( MySql )
@@ -196,7 +202,12 @@ adminRouter.post("/users", async (req, res) => {
   const cleanedDescriptor = sanitizeFaceDescriptor(faceDescriptor);
 const descriptorJson = cleanedDescriptor ? JSON.stringify(cleanedDescriptor) : null;
   const cleanedStudentCode = sanitizeStudentCode(studentCode); // ✅ agregado
-// 🚫 Bloquear rostro duplicado (solo si viene descriptor)
+if (role === "student" && !cleanedStudentCode) {
+  return res.status(400).json({ error: "El código del estudiante debe tener exactamente 4 números" });
+
+}
+
+  // 🚫 Bloquear rostro duplicado (solo si viene descriptor)
 if (role === "student" && cleanedDescriptor) {
   const THRESHOLD = 0.50; // 0.45 más estricto | 0.55 más permisivo
   const dup = await findDuplicateFaceDescriptor(cleanedDescriptor, null);
@@ -219,7 +230,8 @@ const user = {
   role,
 
   // ✅ GUARDAR CÓDIGO SOLO SI ES ESTUDIANTE (o si te lo mandan)
-  studentCode: role === "student" ? (String(studentCode || "").trim() || "") : "",
+  studentCode: role === "student" ? (cleanedStudentCode || "") : "",
+
 
   faceId: cleanedFaceId || null,
   faceDescriptor: descriptorJson,
@@ -260,7 +272,21 @@ const { name, role, faceId, password, faceDescriptor, studentCode } = req.body |
     patch.role = role;
   }
 
-  if (typeof studentCode !== "undefined") patch.studentCode = sanitizeStudentCode(studentCode); // ✅
+  if (typeof studentCode !== "undefined") {
+  const cleaned = sanitizeStudentCode(studentCode);
+
+  if (!cleaned) {
+    return res.status(400).json({ error: "El código del estudiante debe tener exactamente 4 números" });
+  }
+
+  const exists = await findOne("users", "studentCode", cleaned);
+  if (exists && exists.id !== id) {
+    return res.status(409).json({ error: "Ese código de estudiante ya está registrado" });
+  }
+
+  patch.studentCode = cleaned;
+}
+
 
   if (typeof faceId !== "undefined") patch.faceId = faceId ? sanitizeFaceId(faceId) : null;
 
