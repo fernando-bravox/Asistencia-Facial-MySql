@@ -1,7 +1,9 @@
 import FaceAttendanceScanner from "../../components/FaceAttendanceScanner.jsx";
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "../../api/client.js";
+import { api, getToken } from "../../api/client.js";
+
+
 import Toast from "../../components/Toast.jsx";
 import TapoAttendanceScanner from "../../components/TapoAttendanceScanner.jsx";
 
@@ -92,6 +94,12 @@ export default function ProfSubjectDetail() {
       setMsg({ type: "err", text: err.message });
     }
   }
+  function labelEstado(status) {
+  if (status === "late") return "Tarde";
+  if (status === "present") return "Presente";
+  return status; // por si llega otro valor
+}
+
 function buildRange() {
   if (!filterDate) return { from: null, to: null };
 
@@ -311,24 +319,36 @@ const filteredAttendance = useMemo(() => {
 
     const url = `/api/prof/subjects/${id}/attendance/export${qs.toString() ? `?${qs}` : ""}`;
 
+    const token = getToken();
+
     const r = await fetch(url, {
       method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      // si tu backend además usa cookie, lo dejas:
       credentials: "include"
     });
 
-    if (!r.ok) throw new Error("No se pudo exportar");
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error(txt || "No se pudo exportar");
+    }
 
     const blob = await r.blob();
     const dl = window.URL.createObjectURL(blob);
+
     const a = document.createElement("a");
     a.href = dl;
     a.download = `asistencia_${id}${filterDate ? "_" + filterDate : ""}.xlsx`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
+
     window.URL.revokeObjectURL(dl);
   } catch (err) {
     setMsg({ type: "err", text: err.message });
   }
 }
+
 
 
   const studentsForSelect = enrollments.map(e => e.student).filter(Boolean);
@@ -709,7 +729,7 @@ const filteredAttendance = useMemo(() => {
                 <th>Fecha/Hora</th>
                 <th>Estado</th>
                 <th>Método</th>
-                <th>Aprobación</th>
+
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -720,23 +740,15 @@ const filteredAttendance = useMemo(() => {
                   <td className="muted">{new Date(a.timestamp).toLocaleString()}</td>
                   <td>
                     <span className={`badge ${a.status === "present" ? "ok" : "warn"}`}>
-                      {a.status}
-                    </span>
+  {labelEstado(a.status)}
+</span>
+
                   </td>
-                  <td className="muted">{a.method}</td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        a.approvalStatus === "approved"
-                          ? "ok"
-                          : a.approvalStatus === "pending"
-                          ? "pending"
-                          : "bad"
-                      }`}
-                    >
-                      {a.approvalStatus}
-                    </span>
-                  </td>
+                  <td className="muted">
+  {a.method === "prof_device" ? "Sistema" : a.method === "manual" ? "Manual" : a.method}
+</td>
+
+                  
                   <td>
                     <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
                       <button className="btn secondary" type="button" onClick={() => openEdit(a)}>
