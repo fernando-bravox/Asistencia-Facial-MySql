@@ -584,12 +584,14 @@ async function saveEdit() {
   value={form.studentCode}
   inputMode="numeric"
   pattern="[0-9]*"
-  onChange={e => {
-    const onlyNums = e.target.value.replace(/\D/g, "");
-    setForm({ ...form, studentCode: onlyNums });
+  maxLength={4}
+  onChange={(e) => {
+    const onlyNums4 = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setForm({ ...form, studentCode: onlyNums4 });
   }}
-  placeholder="Ej: 2024001"
+  placeholder="Ej: 1234"
 />
+
 
                 </div>
               )}
