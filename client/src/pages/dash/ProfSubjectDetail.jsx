@@ -12,6 +12,8 @@ export default function ProfSubjectDetail() {
   const { id } = useParams();
 
   const [msg, setMsg] = useState({ type: "ok", text: "" });
+  const [filterDate, setFilterDate] = useState("");
+  const [filterScheduleId, setFilterScheduleId] = useState("all"); // "all" o id de schedule
 
   const [subjects, setSubjects] = useState([]);
   const subject = useMemo(() => subjects.find(s => s.id === id), [subjects, id]);
@@ -90,6 +92,33 @@ export default function ProfSubjectDetail() {
       setMsg({ type: "err", text: err.message });
     }
   }
+function buildRange() {
+  if (!filterDate) return { from: null, to: null };
+
+  // si es "todo el día"
+  if (filterScheduleId === "all") {
+    const from = new Date(`${filterDate}T00:00:00`);
+    const to = new Date(`${filterDate}T23:59:59`);
+    return { from, to };
+  }
+
+  const sc = schedules.find(s => s.id === filterScheduleId);
+  if (!sc) return { from: null, to: null };
+
+  const from = new Date(`${filterDate}T${sc.startTime}:00`);
+  const to = new Date(`${filterDate}T${sc.endTime}:59`);
+  return { from, to };
+}
+
+const filteredAttendance = useMemo(() => {
+  const { from, to } = buildRange();
+  if (!from || !to) return attendance;
+
+  return (attendance || []).filter(a => {
+    const t = new Date(a.timestamp);
+    return t >= from && t <= to;
+  });
+}, [attendance, filterDate, filterScheduleId, schedules]);
 
   async function deleteSchedule(scheduleId) {
     if (!confirm("¿Eliminar horario?")) return;
@@ -270,25 +299,36 @@ export default function ProfSubjectDetail() {
   // Export Excel
   // =========================
   async function exportExcel() {
-    try {
-      const r = await fetch(`/api/prof/subjects/${id}/attendance/export`, {
-        method: "GET",
-        credentials: "include"
-      });
+  try {
+    const { from, to } = buildRange();
+    const qs = new URLSearchParams();
 
-      if (!r.ok) throw new Error("No se pudo exportar");
-
-      const blob = await r.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `asistencia_${id}.xlsx`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      setMsg({ type: "err", text: err.message });
+    if (from && to) {
+      qs.set("from", from.toISOString());
+      qs.set("to", to.toISOString());
     }
+
+    const url = `/api/prof/subjects/${id}/attendance/export${qs.toString() ? `?${qs}` : ""}`;
+
+    const r = await fetch(url, {
+      method: "GET",
+      credentials: "include"
+    });
+
+    if (!r.ok) throw new Error("No se pudo exportar");
+
+    const blob = await r.blob();
+    const dl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = dl;
+    a.download = `asistencia_${id}${filterDate ? "_" + filterDate : ""}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(dl);
+  } catch (err) {
+    setMsg({ type: "err", text: err.message });
   }
+}
+
 
   const studentsForSelect = enrollments.map(e => e.student).filter(Boolean);
   const enrolledStudentsForScan = studentsForSelect;
@@ -591,11 +631,61 @@ export default function ProfSubjectDetail() {
 
         </div>
       </div>
+<div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+  <div>
+    <label className="label">Día</label>
+    <input
+      className="input"
+      type="date"
+      value={filterDate}
+      onChange={(e) => setFilterDate(e.target.value)}
+    />
+  </div>
+
+  <div>
+    <label className="label">Horario</label>
+    <select
+      className="input"
+      value={filterScheduleId}
+      onChange={(e) => setFilterScheduleId(e.target.value)}
+      disabled={!filterDate}
+      title={!filterDate ? "Primero selecciona un día" : ""}
+    >
+      <option value="all">Todo el día</option>
+      {schedules.map(sc => (
+        <option key={sc.id} value={sc.id}>
+          {DAYS[Number(sc.dayOfWeek)]} {sc.startTime} - {sc.endTime}
+        </option>
+      ))}
+    </select>
+  </div>
+
+  <button
+    type="button"
+    className="btn secondary"
+    onClick={() => {
+      setFilterDate("");
+      setFilterScheduleId("all");
+    }}
+  >
+    Limpiar filtro
+  </button>
+
+  <button type="button" className="btn" onClick={exportExcel}>
+    Descargar Excel
+  </button>
+</div>
+
+<div className="muted text-sm mt-2">
+  Mostrando <b>{filteredAttendance.length}</b> registros (de {attendance.length})
+</div>
 
       {/* ✅ Asistencias */}
+      
       <div className="card">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
+          
             <h3 className="title">Asistencias</h3>
             <p className="label">
               Los registros de cámara pueden quedar “pendiente” si el estudiante no está matriculado.
@@ -621,7 +711,7 @@ export default function ProfSubjectDetail() {
               </tr>
             </thead>
             <tbody>
-              {attendance.map(a => (
+              {filteredAttendance.map(a => (
                 <tr key={a.id}>
                   <td>{a.student?.name || "N/A"}</td>
                   <td className="muted">{new Date(a.timestamp).toLocaleString()}</td>
