@@ -17,7 +17,11 @@ export const profRouter = Router();
 profRouter.use(requireAuth(), requireRole("professor"));
 
 
+function buildSessionKey({ subjectId, timestampISO, matchedSc }) {
+  const todayKey = dateKeyInTZ(new Date(timestampISO));
+  return `${subjectId}|${todayKey}|${matchedSc.dayOfWeek}|${matchedSc.startTime}-${matchedSc.endTime}`;
 
+}
 // =========================
 // ✅ STREAM TAPO (RTSP -> MJPEG) para usar en el frontend
 // =========================
@@ -416,13 +420,57 @@ profRouter.put("/subjects/:id/attendance/:attendanceId/timestamp", async (req, r
   if (isNaN(parsed.getTime())) return res.status(400).json({ error: "timestamp inválido" });
 
   await upsert("attendance", req.params.attendanceId, {
-    timestamp: parsed.toISOString(),
-    updated_at: new Date().toISOString(),
-  });
+  timestamp: parsed.toISOString(),
+});
+
+
 
   res.json({ ok: true });
 });
 
+async function buildSessionForNow(subjectId, tsISO) {
+  // schedules desde MySQL
+  const subjectSchedules = await queryWhere("schedules", "subject_id", "==", subjectId);
+
+  // settings desde MySQL
+  const setRow = await getById("settings", subjectId);
+  const graceMinutes = setRow ? Number(setRow.grace_minutes ?? setRow.graceMinutes ?? 10) : 10;
+
+  let status = null;
+  let matchedSc = null;
+
+  for (const sc of subjectSchedules || []) {
+    const schedule = {
+      dayOfWeek: sc.day_of_week ?? sc.dayOfWeek,
+      startTime: sc.start_time ?? sc.startTime,
+      endTime: sc.end_time ?? sc.endTime,
+    };
+
+    const m = matchSchedule({ schedule, timestampISO: tsISO, graceMinutes });
+    if (m.match) {
+      status = m.status;
+      matchedSc = schedule;
+      break;
+    }
+  }
+
+  if (!status || !matchedSc) return null;
+
+  const todayKey = dateKeyInTZ(new Date(tsISO));
+  const sessionKey = `${subjectId}|${todayKey}|${matchedSc.dayOfWeek}|${matchedSc.startTime}-${matchedSc.endTime}`;
+
+  return { status, matchedSc, sessionKey };
+}
+
+async function alreadyMarked(subjectId, studentId, sessionKey) {
+  const attRows = await queryWhere("attendance", "subject_id", "==", subjectId);
+
+  return (attRows || []).some((a) => {
+    const sid = a.student_id || a.studentId;
+    const sk = a.session_key || a.sessionKey || null;
+    return String(sid) === String(studentId) && String(sk) === String(sessionKey);
+  });
+}
 
 profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
   const { studentId, status } = req.body || {};
@@ -435,21 +483,41 @@ profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
   const role = student?.role || student?.rol;
   if (!student || role !== "student") return res.status(404).json({ error: "Estudiante no encontrado" });
 
-  const attendanceId = nanoid();
+  const subjectId = req.params.id;
   const nowISO = new Date().toISOString();
 
+  // ✅ MISMA sesión que usa SCAN (misma lógica)
+  const ses = await buildSessionForNow(subjectId, nowISO);
+  if (!ses) {
+    return res.status(202).json({ ok: true, message: "No hay clase en curso para esta materia." });
+  }
+
+  // ✅ Bloqueo real (manual también)
+  const exists = await alreadyMarked(subjectId, studentId, ses.sessionKey);
+  if (exists) {
+    return res.json({
+      ok: true,
+      alreadyMarked: true,
+      message: "El estudiante ya fue registrado en esta clase.",
+      student: { id: student.id, name: student.name, email: student.email },
+    });
+  }
+
+  const attendanceId = `${studentId}_${ses.sessionKey}`.replace(/[|:\s]/g, "_");
+
   await upsert("attendance", attendanceId, {
-    subject_id: req.params.id,
+    subject_id: subjectId,
     student_id: studentId,
     timestamp: nowISO,
     method: "manual",
-    status: status || "present",
+    status: status || ses.status || "present",
     approval_status: "approved",
+    session_key: ses.sessionKey,          // ✅ clave
     created_at: nowISO,
   });
 
   // subjectName desde MySQL
-  const subject = await getById("subjects", req.params.id);
+  const subject = await getById("subjects", subjectId);
   const subjectName = subject?.name || "";
 
   try {
@@ -457,7 +525,7 @@ profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
       to: student.email,
       studentName: student.name,
       subjectName,
-      status: status || "present",
+      status: status || ses.status || "present",
       timestampISO: nowISO,
     });
   } catch (error) {
@@ -467,6 +535,7 @@ profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
   const saved = await getById("attendance", attendanceId);
   res.status(201).json({ attendance: saved });
 });
+
 
 
 // Scan mark (profesor) ✅ MySQL

@@ -480,42 +480,56 @@ const filteredAttendance = useMemo(() => {
 
           <form onSubmit={addSchedule} className="mt-4 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="label">Día</label>
-                <select
-                  className="input"
-                  value={schedForm.dayOfWeek}
-                  onChange={e => setSchedForm({ ...schedForm, dayOfWeek: Number(e.target.value) })}
-                >
-                  {DAYS.map((d, i) => (
-                    <option key={i} value={i}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
+  <div>
+    <label className="label">Día</label>
+    <select
+      className="input"
+      value={schedForm.dayOfWeek}
+      onChange={(e) =>
+        setSchedForm({ ...schedForm, dayOfWeek: Number(e.target.value) })
+      }
+    >
+      {DAYS.map((d, i) => (
+        <option key={i} value={i}>{d}</option>
+      ))}
+    </select>
+  </div>
 
-              <div>
-                <label className="label">Inicio</label>
-                <input
-                  className="input"
-                  value={schedForm.startTime}
-                  onChange={e => setSchedForm({ ...schedForm, startTime: e.target.value })}
-                  placeholder="13:00"
-                />
-              </div>
+  <div>
+    <label className="label">Inicio</label>
+    <input
+      className="input"
+      type="time"
+      step="60"
+      value={schedForm.startTime}
+      onChange={(e) => {
+        const newStart = e.target.value;
+        setSchedForm((prev) => {
+          const end = prev.endTime && prev.endTime < newStart ? newStart : prev.endTime;
+          return { ...prev, startTime: newStart, endTime: end };
+        });
+      }}
+    />
+  </div>
 
-              <div>
-                <label className="label">Fin</label>
-                <input
-                  className="input"
-                  value={schedForm.endTime}
-                  onChange={e => setSchedForm({ ...schedForm, endTime: e.target.value })}
-                  placeholder="15:00"
-                />
-              </div>
-            </div>
-
+  <div>
+    <label className="label">Fin</label>
+    <input
+      className="input"
+      type="time"
+      step="60"
+      min={schedForm.startTime}   // ✅ no deja escoger menor que Inicio
+      value={schedForm.endTime}
+      onChange={(e) => {
+        const newEnd = e.target.value;
+        setSchedForm((prev) => ({
+          ...prev,
+          endTime: newEnd < prev.startTime ? prev.startTime : newEnd
+        }));
+      }}
+    />
+  </div>
+</div>
             <button className="btn w-full sm:w-auto" type="submit">
               Agregar horario
             </button>
