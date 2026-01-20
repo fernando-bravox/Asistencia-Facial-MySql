@@ -32,10 +32,24 @@ export default function TapoAttendanceScanner({ subjectId, enrolledStudents, onM
   }
 
   function buildKnownList() {
-    return (enrolledStudents || [])
-      .filter((s) => s?.faceId && Array.isArray(s.faceDescriptor) && s.faceDescriptor.length === 128)
-      .map((s) => ({ student: s, descriptor: new Float32Array(s.faceDescriptor) }));
-  }
+  return (enrolledStudents || [])
+    .map(s => {
+      let fd = s?.faceDescriptor;
+
+      // si viene string JSON desde MySQL → parse
+      if (typeof fd === "string") {
+        try { fd = JSON.parse(fd); } catch (_e) { fd = null; }
+      }
+
+      return { ...s, faceDescriptor: fd };
+    })
+    .filter(s => s?.faceId && Array.isArray(s.faceDescriptor) && s.faceDescriptor.length === 128)
+    .map(s => ({
+      student: s,
+      descriptor: new Float32Array(s.faceDescriptor)
+    }));
+}
+
 
   async function markByFaceId(faceId) {
     return api(`/api/prof/subjects/${subjectId}/attendance/scan`, {
