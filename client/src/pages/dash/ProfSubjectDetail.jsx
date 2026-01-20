@@ -206,6 +206,7 @@ const filteredAttendance = useMemo(() => {
     }
   }
 
+
   // =========================
   // Asistencia: manual
   // =========================
@@ -671,9 +672,13 @@ const filteredAttendance = useMemo(() => {
     Limpiar filtro
   </button>
 
-  <button type="button" className="btn" onClick={exportExcel}>
-    Descargar Excel
-  </button>
+  <button className="btn" type="button" onClick={exportExcel}>
+  Descargar Excel
+</button>
+
+
+
+
 </div>
 
 <div className="muted text-sm mt-2">
@@ -692,9 +697,7 @@ const filteredAttendance = useMemo(() => {
             </p>
           </div>
 
-          <button className="btn secondary w-full sm:w-auto" onClick={exportExcel}>
-            Exportar Excel
-          </button>
+          
         </div>
 
         <div className="mt-4 overflow-x-auto max-h-[260px] overflow-y-auto">

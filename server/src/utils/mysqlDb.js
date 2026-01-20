@@ -218,14 +218,31 @@ export async function remove(table, id) {
 function toMysqlDatetime(value) {
   if (!value) return value;
 
-  // Si ya viene tipo "YYYY-MM-DD HH:mm:ss", lo dejamos
-  if (typeof value === "string" && value.includes(" ") && value.length >= 19) return value;
+  if (typeof value === "string" && value.includes(" ") && value.length >= 19) {
+    return value;
+  }
 
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
 
-  return d.toISOString().slice(0, 19).replace("T", " ");
+  // ⬇️ usa hora LOCAL (Ecuador), no UTC
+  const pad = (n) => String(n).padStart(2, "0");
+
+  return (
+    d.getFullYear() +
+    "-" +
+    pad(d.getMonth() + 1) +
+    "-" +
+    pad(d.getDate()) +
+    " " +
+    pad(d.getHours()) +
+    ":" +
+    pad(d.getMinutes()) +
+    ":" +
+    pad(d.getSeconds())
+  );
 }
+
 
 function mapFieldsToDb(data) {
   const fieldMap = {
