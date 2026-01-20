@@ -74,6 +74,41 @@ function sanitizeFaceDescriptor(faceDescriptor) {
   if (cleaned.some(n => Number.isNaN(n) || !Number.isFinite(n))) return null;
   return cleaned;
 }
+function euclideanDistance(a, b) {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i] - b[i];
+    sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
+function parseDescriptorMaybe(value) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return null; }
+  }
+  if (!Array.isArray(value) || value.length !== 128) return null;
+  const cleaned = value.map(Number);
+  if (cleaned.some(n => Number.isNaN(n) || !Number.isFinite(n))) return null;
+  return cleaned;
+}
+
+async function findDuplicateFaceDescriptor(incomingDescriptor, excludeUserId) {
+  const users = await listAll("users"); // ya te devuelve faceDescriptor
+
+  let best = { userId: null, distance: Infinity };
+  for (const u of users) {
+    if (!u?.id || u.id === excludeUserId) continue;
+
+    const existing = parseDescriptorMaybe(u.faceDescriptor);
+    if (!existing) continue;
+
+    const dist = euclideanDistance(incomingDescriptor, existing);
+    if (dist < best.distance) best = { userId: u.id, distance: dist };
+  }
+  return best;
+}
 
 function sanitizeStudentCode(studentCode) {
   if (typeof studentCode === "undefined" || studentCode === null) return null;
@@ -161,6 +196,19 @@ adminRouter.post("/users", async (req, res) => {
   const cleanedDescriptor = sanitizeFaceDescriptor(faceDescriptor);
 const descriptorJson = cleanedDescriptor ? JSON.stringify(cleanedDescriptor) : null;
   const cleanedStudentCode = sanitizeStudentCode(studentCode); // ✅ agregado
+// 🚫 Bloquear rostro duplicado (solo si viene descriptor)
+if (role === "student" && cleanedDescriptor) {
+  const THRESHOLD = 0.50; // 0.45 más estricto | 0.55 más permisivo
+  const dup = await findDuplicateFaceDescriptor(cleanedDescriptor, null);
+
+  if (dup.userId && dup.distance < THRESHOLD) {
+    return res.status(409).json({
+      error: "Este rostro ya está registrado en otro usuario",
+      matchUserId: dup.userId,
+      distance: dup.distance,
+    });
+  }
+}
 
   const id = nanoid();
 
@@ -218,14 +266,28 @@ const { name, role, faceId, password, faceDescriptor, studentCode } = req.body |
 
   if (typeof faceDescriptor !== "undefined") {
   const cleaned = sanitizeFaceDescriptor(faceDescriptor);
+
+  // 🚫 Bloquear rostro duplicado (cuando se actualiza/registrar rostro)
+  if (cleaned) {
+    const THRESHOLD = 0.50;
+    const dup = await findDuplicateFaceDescriptor(cleaned, id);
+
+    if (dup.userId && dup.distance < THRESHOLD) {
+      return res.status(409).json({
+        error: "Este rostro ya está registrado en otro usuario",
+        matchUserId: dup.userId,
+        distance: dup.distance,
+      });
+    }
+  }
+
   patch.faceDescriptor = cleaned ? JSON.stringify(cleaned) : null;
 }
 
 
+
   if (password) patch.passwordHash = await hashPassword(password);
-if (typeof studentCode !== "undefined") {
-  patch.studentCode = String(studentCode || "").trim();
-}
+
 
   await upsert("users", id, { ...user, ...patch });
 
