@@ -205,14 +205,110 @@ export async function queryWhere(table, field, op, value) {
 
 export async function remove(table, id) {
   assertTable(table);
+
+  // settings no tiene columna id; su PK es subject_id
+  if (table === "settings") {
+    await pool.query(`DELETE FROM settings WHERE subject_id=?`, [id]);
+    return;
+  }
+
   await pool.query(`DELETE FROM \`${table}\` WHERE id=?`, [id]);
+}
+
+function toMysqlDatetime(value) {
+  if (!value) return value;
+
+  // Si ya viene tipo "YYYY-MM-DD HH:mm:ss", lo dejamos
+  if (typeof value === "string" && value.includes(" ") && value.length >= 19) return value;
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+
+  return d.toISOString().slice(0, 19).replace("T", " ");
+}
+
+function mapFieldsToDb(data) {
+  const fieldMap = {
+    // comunes
+    createdAt: "created_at",
+    updatedAt: "updated_at",
+
+    // users
+    studentCode: "student_code",
+    passwordHash: "password_hash",
+    faceId: "face_id",
+    faceDescriptor: "face_descriptor",
+
+    // subjects
+    professorId: "professor_id",
+
+    // schedules
+    subjectId: "subject_id",
+    dayOfWeek: "day_of_week",
+    startTime: "start_time",
+    endTime: "end_time",
+
+    // enrollments / attendance
+    studentId: "student_id",
+    approvalStatus: "approval_status",
+    sessionKey: "session_key",
+
+    // settings
+    graceMinutes: "grace_minutes",
+  };
+
+  const out = {};
+
+  for (const [key, val] of Object.entries(data)) {
+    const dbKey = fieldMap[key] || key;
+
+    // JSON (tu SQL define face_descriptor como JSON)
+    if (dbKey === "face_descriptor") {
+      out[dbKey] = typeof val === "string" ? val : JSON.stringify(val);
+      continue;
+    }
+
+    // Fechas a DATETIME
+    if (dbKey === "created_at" || dbKey === "updated_at" || dbKey === "timestamp") {
+      out[dbKey] = toMysqlDatetime(val);
+      continue;
+    }
+
+    out[dbKey] = val;
+  }
+
+  return out;
 }
 
 export async function upsert(table, id, data) {
   assertTable(table);
 
-  const cols = Object.keys(data);
-  const values = cols.map((c) => data[c]);
+  // settings: PK = subject_id (no existe "id")
+  if (table === "settings") {
+    const dbData = mapFieldsToDb(data);
+    const subjectId = id;
+
+    const cols = Object.keys(dbData);
+    const values = cols.map((c) => dbData[c]);
+
+    const colSql = cols.map((c) => `\`${c}\``).join(",");
+    const ph = cols.map(() => "?").join(",");
+    const upd = cols.map((c) => `\`${c}\`=VALUES(\`${c}\`)`).join(",");
+
+    await pool.query(
+      `INSERT INTO settings (subject_id, ${colSql}) VALUES (?, ${ph})
+       ON DUPLICATE KEY UPDATE ${upd}`,
+      [subjectId, ...values]
+    );
+
+    return { subjectId, ...data };
+  }
+
+  // resto de tablas con id
+  const dbData = mapFieldsToDb(data);
+
+  const cols = Object.keys(dbData);
+  const values = cols.map((c) => dbData[c]);
 
   const colSql = cols.map((c) => `\`${c}\``).join(",");
   const ph = cols.map(() => "?").join(",");
