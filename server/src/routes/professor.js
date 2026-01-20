@@ -262,7 +262,6 @@ profRouter.put("/subjects/:id/settings", async (req, res) => {
   const nowISO = new Date().toISOString();
 
   await upsert("settings", req.params.id, {
-    subject_id: req.params.id,
     grace_minutes: Number(graceMinutes || 10),
     updated_at: nowISO,
   });
