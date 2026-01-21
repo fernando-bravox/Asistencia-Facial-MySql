@@ -765,4 +765,107 @@ profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
   res.send(Buffer.from(fileBuffer));
 });
 
+profRouter.get(
+  "/subjects/:id/attendance/stats",
+  async (req, res) => {
 
+    const check = await ensureSubjectOwner(req.params.id, req.user.id);
+    if (check.error) {
+      return res.status(check.status).json({ error: check.error });
+    }
+
+    const { from, to } = req.query;
+    if (!from || !to) {
+      return res.status(400).json({ error: "from y to son requeridos" });
+    }
+
+    const subjectId = req.params.id;
+const fromDate = new Date(`${from}T00:00:00`);
+const toDate = new Date(`${to}T23:59:59`);
+
+
+    // 1️⃣ Horarios de la materia
+    const schedules = await queryWhere(
+      "schedules",
+      "subject_id",
+      "==",
+      subjectId
+    );
+
+    // 2️⃣ Generar TODAS las clases esperadas
+    const expectedSessions = new Set();
+
+    for (
+      let d = new Date(fromDate);
+      d <= toDate;
+      d.setDate(d.getDate() + 1)
+    ) {
+      const day = d.getDay();
+      const dateKey = dateKeyInTZ(new Date(d));
+
+      for (const sc of schedules || []) {
+        const dow = sc.day_of_week ?? sc.dayOfWeek;
+        if (dow === day) {
+          const start = sc.start_time ?? sc.startTime;
+          const end = sc.end_time ?? sc.endTime;
+
+          expectedSessions.add(
+            `${subjectId}|${dateKey}|${dow}|${start}-${end}`
+          );
+        }
+      }
+    }
+
+    const totalClasses = expectedSessions.size;
+
+    // 3️⃣ Asistencias en el rango
+    let attendance = await queryWhere(
+      "attendance",
+      "subject_id",
+      "==",
+      subjectId
+    );
+
+    attendance = (attendance || []).filter(a => {
+      if ((a.approval_status || a.approvalStatus) === "rejected") return false;
+      const t = new Date(a.timestamp);
+      return t >= fromDate && t <= toDate;
+    });
+
+    // 4️⃣ Matrículas
+    const enrollments = await queryWhere(
+      "enrollments",
+      "subject_id",
+      "==",
+      subjectId
+    );
+
+    // 5️⃣ Resultado por alumno
+    const result = [];
+
+    for (const e of enrollments || []) {
+      const studentId = e.student_id ?? e.studentId;
+      const student = await getById("users", studentId);
+
+      const attendedSessions = new Set(
+        attendance
+          .filter(a => (a.student_id ?? a.studentId) === studentId)
+          .map(a => a.session_key ?? a.sessionKey)
+      ).size;
+
+      const percent = totalClasses
+        ? Number(((attendedSessions / totalClasses) * 100).toFixed(1))
+        : 0;
+
+      result.push({
+        studentId,
+        name: student?.name || "N/A",
+        total: totalClasses,
+        attended: attendedSessions,
+        percent
+      });
+    }
+
+    res.json(result);
+  }
+);

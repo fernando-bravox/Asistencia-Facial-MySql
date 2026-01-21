@@ -45,8 +45,8 @@ function Nav({ user }) {
           </div>
 
           {/* ✅ Chip de rol (AZUL, no rojo) */}
-          <div className="inline-flex items-center gap-2 self-start md:self-auto rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+          <div className="inline-flex items-center gap-2 self-start md:self-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-red-600" />
             <span className="text-sm text-slate-700">
               Rol: <b className="text-slate-900">{user.role}</b>
             </span>
@@ -54,7 +54,7 @@ function Nav({ user }) {
         </div>
 
         {/* ✅ Línea decorativa (AZUL) */}
-        <div className="mt-5 h-[2px] w-full bg-gradient-to-r from-blue-600 via-blue-300 to-transparent" />
+        <div className="mt-5 h-[2px] w-full bg-gradient-to-r from-red-600 via-red-300 to-transparent" />
       </div>
     </div>
   );
@@ -124,14 +124,15 @@ export default function Dashboard() {
           </main>
 
           {/* ✅ FOOTER */}
-          <footer className="mt-10 border-t border-slate-200 bg-white">
-            <div className="mx-auto max-w-6xl px-4 py-4 text-sm text-slate-500 flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
-              <span>© {new Date().getFullYear()} Asistencia App</span>
-              <span className="text-slate-400">
-                Sistema de asistencia con reconocimiento facial
-              </span>
-            </div>
-          </footer>
+<footer className="mt-10 border-t border-slate-200 bg-gray-800">
+  <div className="mx-auto max-w-6xl px-4 py-2 text-xs text-white flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
+    <span>© {new Date().getFullYear()} Asistencia App</span>
+    <span className="text-white">
+      By: Fernando Bravo y Danny Arroba
+    </span>
+  </div>
+</footer>
+
         </div>
       )}
     </RequireAuth>

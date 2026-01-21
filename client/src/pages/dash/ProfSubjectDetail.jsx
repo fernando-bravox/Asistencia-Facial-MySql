@@ -24,6 +24,10 @@ export default function ProfSubjectDetail() {
   const [enrollments, setEnrollments] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [settings, setSettings] = useState({ graceMinutes: 10 });
+const [showStats, setShowStats] = useState(false);
+const [from, setFrom] = useState("");
+const [to, setTo] = useState("");
+const [stats, setStats] = useState([]);
 
   // ✅ NUEVO: lista real de estudiantes desde Firestore
   const [allStudents, setAllStudents] = useState([]);
@@ -303,6 +307,18 @@ const filteredAttendance = useMemo(() => {
       setMsg({ type: "err", text: err.message });
     }
   }
+async function loadStats() {
+  if (!from || !to) {
+    alert("Selecciona fecha inicio y fin");
+    return;
+  }
+
+  const data = await api(
+    `/api/prof/subjects/${id}/attendance/stats?from=${from}&to=${to}`
+  );
+  setStats(data);
+}
+
 
   // =========================
   // Export Excel
@@ -356,6 +372,9 @@ const filteredAttendance = useMemo(() => {
 
   return (
     <div className="space-y-6">
+
+
+
 
       {/* ✅ Header materia */}
       <div className="card">
@@ -590,7 +609,7 @@ const filteredAttendance = useMemo(() => {
                     type="button"
                     className={[
                       "btn secondary w-full text-left",
-                      selectedStudentId === s.id ? "ring-2 ring-blue-200" : ""
+                      selectedStudentId === s.id ? "ring-2 ring-red-200" : ""
                     ].join(" ")}
                     onClick={() => setSelectedStudentId(s.id)}
                   >
@@ -946,7 +965,55 @@ const filteredAttendance = useMemo(() => {
             Guardar asistencia manual
           </button>
         </form>
+        
       </div>
+      <button className="btn" onClick={() => setShowStats(!showStats)}>
+  Ver porcentaje de asistencia
+</button>
+
+
+{showStats && (
+  <div className="card mt-4">
+    
+    <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
+    <input type="date" value={to} onChange={e => setTo(e.target.value)} />
+
+    <button className="btn" onClick={loadStats}>
+      Buscar
+    </button>
+
+    <table className="table mt-4">
+      <thead>
+        <tr>
+          <th>Alumno</th>
+          <th>Clases</th>
+          <th>Asistencias</th>
+          <th>%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {stats.map(s => (
+          <tr key={s.studentId}>
+            <td>{s.name}</td>
+            <td>{s.total}</td>
+            <td>{s.attended}</td>
+            <td>{s.percent}%</td>
+          </tr>
+        ))}
+
+        {stats.length === 0 && (
+          <tr>
+            <td colSpan="4" className="text-center muted">
+              No hay datos para el rango seleccionado
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+)}
+
+
     </div>
   );
 }

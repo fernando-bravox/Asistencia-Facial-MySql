@@ -35,19 +35,29 @@ export default function LoginPage() {
       }}
     >
       {/* Header */}
-<header className="flex items-center p-1 bg-white z-20 fixed top-0 left-0 right-0">
-  {/* Texto a la izquierda (posicionado de manera absoluta) */}
-  <div className="absolute left-4 text-lg font-medium text-black"></div>
+<header className="fixed top-0 left-0 right-0 z-20 bg-gradient-to-r from-red-800 via-red-600 to-red-700 shadow-md">
+  <div className="mx-auto flex max-w-6xl items-center justify-center px-4 py-3">
+    
+    {/* Logo + texto */}
+    <div className="flex items-center gap-4">
+      
+      {/* LOGO (el que ya usas) */}
+      
 
-  {/* Imagen centrada */}
-  <div className="flex justify-center flex-1">
-    <img 
-      src={logoImg} // Usando la importación de la imagen
-      alt="Logo Asistencia Facial"
-      className="h-10" // Ajusta el tamaño de la imagen
-    />
+      {/* TEXTO */}
+      <div className="text-center leading-tight">
+        <div className="text-xl sm:text-2xl font-black tracking-wider text-white drop-shadow-md">
+          ASISTENCIA FACIAL
+        </div>
+        <div className="text-xs sm:text-sm text-white/80 tracking-wide">
+          ESPOCH
+        </div>
+      </div>
+
+    </div>
   </div>
 </header>
+
 
 
 
