@@ -674,6 +674,7 @@ profRouter.post("/subjects/:id/attendance/:attendanceId/reject", async (req, res
 
 // Export Excel
 // Export Excel (MySQL)
+// Export Excel (MySQL) ✅ Incluye FALTAS
 profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
@@ -682,17 +683,28 @@ profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
   const fromDate = from ? new Date(from) : null;
   const toDate = to ? new Date(to) : null;
 
-  // ✅ 1) Traer asistencia desde MySQL
-  let items = await queryWhere("attendance", "subject_id", "==", req.params.id);
+  const subjectId = req.params.id;
+
+  // 1) Traer matriculados (enrollments)
+  const enrollmentsRaw = await queryWhere("enrollments", "subject_id", "==", subjectId);
+  const enrollments = enrollmentsRaw || [];
+
+  // 2) Traer asistencia (filtrada) y excluir rechazados
+  let items = await queryWhere("attendance", "subject_id", "==", subjectId);
   items = items || [];
 
-  // ✅ 2) Excluir rechazados (snake_case)
   items = items.filter((a) => (a.approval_status || a.approvalStatus) !== "rejected");
-
-  // ✅ 3) Filtros por fecha
   if (fromDate) items = items.filter((a) => new Date(a.timestamp) >= fromDate);
   if (toDate) items = items.filter((a) => new Date(a.timestamp) <= toDate);
 
+  // 3) Mapear asistencia por studentId (para saber quién tiene registro)
+  const byStudent = new Map();
+  for (const a of items) {
+    const sid = a.student_id || a.studentId;
+    if (sid) byStudent.set(String(sid), a);
+  }
+
+  // 4) Crear Excel
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Asistencia");
 
@@ -706,28 +718,51 @@ profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
     { header: "Aprobación", key: "approvalStatus", width: 12 },
   ];
 
-  for (const a of items) {
-    // ✅ en MySQL la FK suele ser student_id
-    const studentId = a.student_id || a.studentId;
+  // 5) Para cada matriculado: si tiene asistencia => fila real; si no => Falta
+  for (const e of enrollments) {
+    const studentId = e.student_id || e.studentId; // por si viene snake_case o camelCase
+    if (!studentId) continue;
 
     const st = await getById("users", studentId);
 
-    ws.addRow({
-      studentCode: st?.studentCode || st?.student_code || "",
-      student: st?.name || "N/A",
-      email: st?.email || "N/A",
-      timestamp: a.timestamp,
-      status: a.status,
-      method: a.method,
-      approvalStatus: a.approval_status || a.approvalStatus,
-    });
+    const a = byStudent.get(String(studentId));
+
+    if (a) {
+      ws.addRow({
+        studentCode: st?.studentCode || st?.student_code || "",
+        student: st?.name || "N/A",
+        email: st?.email || "N/A",
+        timestamp: a.timestamp,
+        status: a.status === "present" ? "Presente" : a.status === "late" ? "Tarde" : a.status,
+        method: a.method === "prof_device" ? "Sistema" : a.method === "manual" ? "Manual" : a.method,
+        approvalStatus: a.approval_status || a.approvalStatus,
+      });
+    } else {
+      // ❌ No existe registro => Falta
+      ws.addRow({
+        studentCode: st?.studentCode || st?.student_code || "",
+        student: st?.name || "N/A",
+        email: st?.email || "N/A",
+        timestamp: "-",
+        status: "Falta",
+        method: "-",
+        approvalStatus: "-",
+      });
+    }
   }
 
   ws.getRow(1).font = { bold: true };
 
   const fileBuffer = await wb.xlsx.writeBuffer();
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="asistencia_${req.params.id}.xlsx"`);
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="asistencia_${subjectId}.xlsx"`
+  );
   res.send(Buffer.from(fileBuffer));
 });
+
 

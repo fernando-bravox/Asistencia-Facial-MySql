@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { FaSignOutAlt } from 'react-icons/fa'; // Importamos el ícono de cerrar sesión
 
 export default function Topbar({ user }) {
   const navigate = useNavigate();
@@ -11,33 +12,33 @@ export default function Topbar({ user }) {
 
   const avatarSrc =
     user?.photoUrl ||
-    `https://ui-avatars.com/api/?background=2563eb&color=fff&name=${encodeURIComponent(
+    `https://ui-avatars.com/api/?background=8B0000&color=fff&name=${encodeURIComponent(
       user?.name || "User"
     )}`;
 
   return (
-    <header className="w-full bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 text-white shadow-md">
+    <header className="w-full bg-gradient-to-r from-red-800 via-red-600 to-red-700 text-white shadow-md">
       <div className="mx-auto w-full max-w-6xl px-4 py-3">
         {/* Contenedor responsive */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           
           {/* IZQUIERDA: Logo + Nombre */}
           <div className="flex items-center gap-3">
-            <img
+           {/* <img
   src="/img/logo1.png"
   alt="Logo"
   className="h-16 w-16 rounded-xl object-top shadow-md ring-2 ring-blue-500/30"
-/>
+/>*/}
 
 
 
             <div className="leading-tight">
-              <div className="text-1xl sm:text-2xl lg:text-3xl font-black tracking-wider text-white drop-shadow-md">
+              <div className="text-1xl sm:text-2xl lg:text-2xl font-black tracking-wider text-white drop-shadow-md">
   ASISTENCIA FACIAL
 </div>
 
               <div className="text-xs sm:text-sm text-white/80">
-                ESCUELA SUPERIOR POLITÉCNICA DE CHIMBORAZO
+                ESPOCH
               </div>
             </div>
           </div>
@@ -49,7 +50,7 @@ export default function Topbar({ user }) {
               <img
                 src={avatarSrc}
                 alt="avatar"
-                className="h-10 w-10 rounded-full border-2 border-white/30 object-cover"
+                className="h-10 w-10 rounded-full border-4 border-red-900"
               />
 
               <div className="min-w-0">
@@ -64,12 +65,12 @@ export default function Topbar({ user }) {
 
             {/* Botón logout */}
             <button
-              onClick={handleLogout}
-              className="shrink-0 rounded-xl bg-red-400 px-3 py-2 text-sm font-semibold
-                         hover:bg-red-600 active:scale-[0.98] transition"
-            >
-              Cerrar sesión
-            </button>
+  onClick={handleLogout}
+  className="shrink-0 rounded-xl bg-red-950 px-3 py-2 text-sm font-semibold
+             hover:bg-black active:scale-[0.98] transition"
+>
+  <FaSignOutAlt className="text-white" size={20} /> {/* Icono de cerrar sesión */}
+</button>
           </div>
 
         </div>

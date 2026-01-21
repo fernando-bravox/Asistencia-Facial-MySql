@@ -748,6 +748,8 @@ const filteredAttendance = useMemo(() => {
               </tr>
             </thead>
             <tbody>
+
+{/*
               {filteredAttendance.map(a => (
                 <tr key={a.id}>
                   <td>{a.student?.name || "N/A"}</td>
@@ -787,6 +789,72 @@ const filteredAttendance = useMemo(() => {
                   </td>
                 </tr>
               ))}
+              */}
+              {(enrollments || []).map((e) => {
+  // buscar info del estudiante
+  const student = (allStudents || []).find(s => s.id === e.studentId);
+
+  // buscar si ya tiene registro en el filtro actual
+  const a = (filteredAttendance || []).find(x =>
+    (x.studentId === e.studentId) || (x.student?.id === e.studentId)
+  );
+
+  const status = a?.status ?? "absent";
+  const timestamp = a?.timestamp ?? null;
+  const method = a?.method ?? "-";
+
+  return (
+    <tr key={a?.id || `absent-${e.studentId}`}>
+      <td>{a?.student?.name || student?.name || "N/A"}</td>
+
+      <td className="muted">
+        {timestamp ? new Date(timestamp).toLocaleString() : "-"}
+      </td>
+
+      <td>
+        <span
+          className={`badge ${
+            status === "present" ? "ok" : status === "late" ? "warn" : "danger"
+          }`}
+        >
+          {status === "present" ? "Presente" : status === "late" ? "Tarde" : "Falta"}
+        </span>
+      </td>
+
+      <td className="muted">
+        {method === "prof_device" ? "Sistema" : method === "manual" ? "Manual" : method}
+      </td>
+
+      <td>
+        {a ? (
+          <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
+            <button className="btn secondary" type="button" onClick={() => openEdit(a)}>
+              Editar
+            </button>
+
+            <button className="btn danger" type="button" onClick={() => deleteAttendance(a.id)}>
+              Borrar
+            </button>
+
+            {a.approvalStatus === "pending" && (
+              <>
+                <button className="btn" type="button" onClick={() => approve(a.id)}>
+                  Aprobar
+                </button>
+                <button className="btn danger" type="button" onClick={() => reject(a.id)}>
+                  Rechazar
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <span className="muted">Sin registro</span>
+        )}
+      </td>
+    </tr>
+  );
+})}
+
               {attendance.length === 0 && (
                 <tr>
                   <td colSpan="6" className="muted">
