@@ -154,7 +154,6 @@ profRouter.post("/subjects", async (req, res) => {
     });
 
     await upsert("settings", subjectId, {
-      subject_id: subjectId,
       grace_minutes: 10,
       updated_at: nowISO,
     });

@@ -3,7 +3,8 @@ import { api } from "../../api/client.js";
 import { Link } from "react-router-dom";
 import Toast from "../../components/Toast.jsx";
 
-const ROOMS = Array.from({ length: 8 }, (_, i) => `TI PAO ${i + 1}`);
+const ROOMS = Array.from({ length: 9 }, (_, i) => `TI PAO ${i}`);
+
 
 export default function ProfSubjects() {
   const [subjects, setSubjects] = useState([]);
