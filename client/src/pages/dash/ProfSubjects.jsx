@@ -1,14 +1,16 @@
+//ProfSubjects.jsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client.js";
 import { Link } from "react-router-dom";
-import Toast from "../../components/Toast.jsx";
+import { showAlert } from "../../utils/swalHelper.js";
+import Swal from "sweetalert2";
 
-const ROOMS = Array.from({ length: 9 }, (_, i) => `TI PAO ${i}`);
+const ROOMS = Array.from({ length: 9 }, (_, i) => `TI PAO ${i + 1}`);
 
 
 export default function ProfSubjects() {
   const [subjects, setSubjects] = useState([]);
-  const [msg, setMsg] = useState({ type: "ok", text: "" });
 
   const [form, setForm] = useState({ name: "", room: ROOMS[0] });
 
@@ -23,12 +25,11 @@ export default function ProfSubjects() {
   const total = useMemo(() => subjects?.length || 0, [subjects]);
 
   async function load() {
-    setMsg({ type: "ok", text: "" });
     try {
       const data = await api("/api/prof/subjects");
       setSubjects(data.subjects || []);
     } catch (err) {
-      setMsg({ type: "err", text: err.message || "Error cargando materias" });
+      showAlert("error", "Error", err.message || "Error cargando materias");
     }
   }
 
@@ -38,17 +39,16 @@ export default function ProfSubjects() {
 
   async function create(e) {
     e.preventDefault();
-    setMsg({ type: "ok", text: "" });
 
     try {
       // ✅ Ya NO enviamos code
       await api("/api/prof/subjects", { method: "POST", body: form });
       setForm({ name: "", room: ROOMS[0] });
       await load();
-      setMsg({ type: "ok", text: "Materia creada" });
+      showAlert("success", "Éxito", "Materia creada correctamente.");
       setOpenNew(false);
     } catch (err) {
-      setMsg({ type: "err", text: err.message || "Error creando materia" });
+      showAlert("error", "Error", err.message || "Error creando materia");
     }
   }
 
@@ -67,7 +67,6 @@ export default function ProfSubjects() {
     e.preventDefault();
     if (!editItem?.id) return;
 
-    setMsg({ type: "ok", text: "" });
     try {
       await api(`/api/prof/subjects/${editItem.id}`, {
         method: "PUT",
@@ -77,237 +76,183 @@ export default function ProfSubjects() {
       setEditOpen(false);
       setEditItem(null);
       await load();
-      setMsg({ type: "ok", text: "Materia actualizada" });
+      showAlert("success", "Éxito", "Materia actualizada correctamente.");
     } catch (err) {
-      setMsg({ type: "err", text: err.message || "Error actualizando materia" });
+      showAlert("error", "Error", err.message || "Error actualizando materia");
     }
   }
 
   async function removeSubject(subjectId) {
-    if (!confirm("¿Eliminar esta materia? También se borrarán horarios/matrículas/asistencias relacionadas.")) return;
+    const result = await Swal.fire({
+      title: "¿Eliminar esta materia?",
+      text: "También se borrarán horarios, matrículas y asistencias relacionadas.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar"
+    });
 
-    setMsg({ type: "ok", text: "" });
+    if (!result.isConfirmed) return;
+
     try {
       await api(`/api/prof/subjects/${subjectId}`, { method: "DELETE" });
       await load();
-      setMsg({ type: "ok", text: "Materia eliminada" });
+      showAlert("success", "Eliminado", "Materia eliminada correctamente.");
     } catch (err) {
-      setMsg({ type: "err", text: err.message || "Error eliminando materia" });
+      showAlert("error", "Error", err.message || "Error eliminando materia");
     }
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <div className="space-y-8 animate-in fade-in duration-700">
       {/* HEADER / ACCIONES */}
-      <div className="bg-white/70 backdrop-blur border border-slate-200 rounded-2xl p-4 sm:p-5">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">Materias</h2>
-            <p className="text-slate-500 text-sm">Administra tus materias y abre detalles.</p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-            <div className="text-sm text-slate-500">
-              Total: <b className="text-slate-900">{total}</b>
+      <div className="card !p-0 overflow-hidden border-none shadow-md">
+        <div className="bg-brand-dark p-6 sm:p-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div>
+              <h2 className="text-3xl font-black text-white tracking-tight">Mis Asignaturas</h2>
+              <p className="text-brand-primary text-xs font-bold uppercase tracking-[0.3em] mt-1">Gestión Académica</p>
             </div>
 
-            <button
-              type="button"
-              className={`px-4 py-2 rounded-xl font-semibold border transition ${
-                openNew
-                  ? "bg-slate-100 text-slate-900 border-slate-200"
-                  : "bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
-              }`}
-              onClick={() => setOpenNew(v => !v)}
-            >
-              {openNew ? "Cerrar nueva materia" : "Nueva materia"}
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="text-right hidden sm:block">
+                <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest">Total Materias</p>
+                <p className="text-2xl font-black text-white leading-none">{total}</p>
+              </div>
+              <button
+                type="button"
+                className={`btn ${openNew ? 'btn-secondary' : 'btn-primary'} !py-3 !px-6 shadow-xl shadow-brand-primary/20`}
+                onClick={() => setOpenNew(v => !v)}
+              >
+                {openNew ? "CANCELAR" : "NUEVA MATERIA"}
+              </button>
+            </div>
           </div>
         </div>
-
-        <div className="mt-3">
-          <Toast type={msg.type} message={msg.text} />
-        </div>
+        
       </div>
 
-      {/* FORM NUEVA MATERIA (OCULTO / DESPLEGABLE) */}
+      {/* FORM NUEVA MATERIA */}
       {openNew && (
-        <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Nueva materia</h3>
-              <p className="text-slate-500 text-sm">
-                El <b>código</b> se genera automáticamente y se guarda en Firebase.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              className="px-3 py-2 rounded-xl font-semibold border border-slate-200 bg-slate-100 hover:bg-slate-200 transition"
-              onClick={() => setOpenNew(false)}
-            >
-              Cerrar
-            </button>
+        <section className="card animate-in slide-in-from-top-4 duration-500 !p-8 border-2 border-brand-primary/20">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-black text-brand-dark tracking-tight">Configurar Nueva Asignatura</h3>
+            <div className="h-1 w-12 bg-brand-primary rounded-full"></div>
           </div>
 
-          <div className="my-4 border-t border-slate-200" />
-
-          <form onSubmit={create} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <form onSubmit={create} className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre</label>
+              <label className="label">Nombre de la Materia</label>
               <input
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="input"
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder="Ej: Sistemas de Información Geográfica"
+                placeholder="Ej: Análisis y Diseño de Sistemas"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Aula</label>
+              <label className="label">Aula / Laboratorio</label>
               <select
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="input"
                 value={form.room}
                 onChange={e => setForm({ ...form, room: e.target.value })}
               >
                 {ROOMS.map(r => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
+                  <option key={r} value={r}>{r}</option>
                 ))}
               </select>
             </div>
 
-            <div className="md:col-span-3 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between pt-1">
-              <p className="text-slate-500 text-sm">
-                Luego podrás agregar el horario y matricular estudiantes.
+            <div className="md:col-span-3 flex items-center justify-between pt-4 border-t border-brand-border">
+              <p className="text-xs font-medium text-brand-gray italic">
+                * El código de la asignatura se generará automáticamente.
               </p>
-
-              <button
-                className="px-4 py-2 rounded-xl font-semibold bg-blue-600 text-white hover:bg-blue-700 transition w-full sm:w-auto"
-                type="submit"
-              >
-                Crear
+              <button className="btn btn-primary !px-10" type="submit">
+                CREAR ASIGNATURA
               </button>
             </div>
           </form>
         </section>
       )}
 
-      {/* LISTA DE MATERIAS */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 min-w-0">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Mis materias</h3>
-            <p className="text-slate-500 text-sm">
-              Abre una materia para ver horarios, matrícula y asistencias.
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {subjects.map(s => (
+          <div key={s.id} className="card group hover:border-brand-primary/50 transition-all duration-300">
+            <div className="flex justify-between items-start mb-4">
+              <div className="bg-brand-light p-3 rounded-2xl border border-brand-border group-hover:bg-brand-primary/10 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+              </div>
+              <div className="flex gap-1">
+                <button onClick={() => openEditModal(s)} className="p-2 text-brand-gray hover:text-brand-primary rounded-lg hover:bg-red-50 transition-all">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+                <button onClick={() => removeSubject(s.id)} className="p-2 text-brand-gray hover:text-red-600 rounded-lg hover:bg-red-50 transition-all">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <h3 className="text-lg font-black text-brand-dark leading-tight mb-1 group-hover:text-brand-primary transition-colors">
+              {s.name}
+            </h3>
+            <p className="text-xs font-bold text-brand-gray uppercase tracking-widest mb-4">
+              Aula: <span className="text-brand-dark">{s.room}</span>
             </p>
+
+            <Link
+              to={`/app/prof/subjects/${s.id}`}
+              className="btn btn-secondary w-full !py-3 group-hover:bg-brand-dark group-hover:text-white transition-all duration-300"
+            >
+              GESTIONAR ASISTENCIA
+            </Link>
           </div>
+        ))}
+      </div>
+
+      {subjects.length === 0 && (
+        <div className="card text-center py-20 border-dashed border-2">
+          <div className="mx-auto w-16 h-16 bg-brand-light rounded-full flex items-center justify-center mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-brand-gray/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-brand-dark">No hay materias registradas</h3>
+          <p className="text-brand-gray text-sm mt-1">Comienza creando tu primera asignatura para gestionar asistencias.</p>
         </div>
-
-        {/* ✅ Scroll: vertical si hay muchas / horizontal si no cabe */}
-        <div className="mt-4 overflow-x-auto max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200">
-          <table className="min-w-[860px] w-full text-sm">
-            <thead className="bg-slate-50 sticky top-0 z-10">
-              <tr className="text-slate-600">
-                <th className="text-left font-bold px-4 py-3">Materia</th>
-                <th className="text-left font-bold px-4 py-3">Código</th>
-                <th className="text-left font-bold px-4 py-3">Aula</th>
-                <th className="text-right font-bold px-4 py-3">Acciones</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {subjects.map(s => (
-                <tr key={s.id} className="border-t border-slate-200 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-semibold text-slate-900">{s.name}</td>
-                  <td className="px-4 py-3 text-slate-500">{s.code}</td>
-                  <td className="px-4 py-3 text-slate-500">{s.room || "-"}</td>
-
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2 flex-wrap">
-                      <Link
-                        className="px-3 py-2 rounded-xl font-semibold border border-slate-200 bg-slate-100 hover:bg-slate-200 transition"
-                        to={`/app/prof/subjects/${s.id}`}
-                      >
-                        Abrir
-                      </Link>
-
-                      <button
-                        type="button"
-                        className="px-3 py-2 rounded-xl font-semibold border border-slate-200 bg-white hover:bg-slate-100 transition"
-                        onClick={() => openEditModal(s)}
-                      >
-                        Editar
-                      </button>
-
-                      <button
-                        type="button"
-                        className="px-3 py-2 rounded-xl font-semibold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition"
-                        onClick={() => removeSubject(s.id)}
-                      >
-                        Borrar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {subjects.length === 0 && (
-                <tr>
-                  <td colSpan="4" className="px-4 py-6 text-slate-500">
-                    Aún no tienes materias. Pulsa <b>Nueva materia</b> para crear la primera.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-2 text-xs text-slate-500 md:hidden">
-          Desliza horizontalmente para ver todas las columnas.
-        </div>
-      </section>
+      )}
 
       {/* MODAL EDITAR */}
       {editOpen && (
-        <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Editar materia</h3>
-                <p className="text-slate-500 text-sm">
-                  Código: <b>{editItem?.code || "-"}</b> (no se edita)
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="px-3 py-2 rounded-xl font-semibold border border-slate-200 bg-slate-100 hover:bg-slate-200 transition"
-                onClick={() => { setEditOpen(false); setEditItem(null); }}
-              >
-                Cerrar
-              </button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-brand-dark/80 backdrop-blur-sm" onClick={() => setEditOpen(false)}></div>
+          <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+            <div className="bg-brand-primary p-6 text-center">
+              <h3 className="text-white font-black uppercase tracking-widest">Editar Asignatura</h3>
             </div>
-
-            <div className="my-4 border-t border-slate-200" />
-
-            <form onSubmit={saveEdit} className="space-y-4">
+            <form onSubmit={saveEdit} className="p-8 space-y-6">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre</label>
+                <label className="label">Nombre de la Materia</label>
                 <input
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input"
                   value={editForm.name}
                   onChange={e => setEditForm({ ...editForm, name: e.target.value })}
                   required
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Aula</label>
+                <label className="label">Aula / Laboratorio</label>
                 <select
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input"
                   value={editForm.room}
                   onChange={e => setEditForm({ ...editForm, room: e.target.value })}
                 >
@@ -316,21 +261,9 @@ export default function ProfSubjects() {
                   ))}
                 </select>
               </div>
-
-              <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
-                <button
-                  type="button"
-                  className="px-4 py-2 rounded-xl font-semibold border border-slate-200 bg-slate-100 hover:bg-slate-200 transition"
-                  onClick={() => { setEditOpen(false); setEditItem(null); }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl font-semibold bg-blue-600 text-white hover:bg-blue-700 transition"
-                >
-                  Guardar cambios
-                </button>
+              <div className="flex gap-3 pt-4">
+                <button type="submit" className="btn btn-primary flex-1">GUARDAR CAMBIOS</button>
+                <button type="button" onClick={() => setEditOpen(false)} className="btn btn-secondary">CANCELAR</button>
               </div>
             </form>
           </div>

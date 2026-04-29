@@ -1,101 +1,136 @@
 @import "tailwindcss";
 
-/* ====== PALETA / BASE GLOBAL ====== */
+@theme {
+  --color-brand-primary: #DC2626;
+  --color-brand-header: #7F1D1D;
+  --color-brand-secondary: #2563EB;
+  --color-brand-dark: #0F172A;
+  --color-brand-panel: #1E293B;
+  --color-brand-light: #F8FAFC;
+  --color-brand-gray: #64748B;
+  --color-brand-border: #E2E8F0;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --shadow-modern: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-red-glow: 0 0 20px rgba(220, 38, 38, 0.15);
+}
+
+/* ====== BASE GLOBAL ====== */
 @layer base {
-  :root {
-    --bg-0: 0 0% 0%;
-    --bg-1: 222 47% 7%;
-    --panel: 222 35% 10%;
-    --stroke: 0 0% 100% / 0.10;
-
-    --text: 0 0% 98%;
-    --muted: 0 0% 85% / 0.75;
-
-    --red: 0 84% 60%;
-    --red-2: 0 72% 45%;
-  }
-
   html, body, #root {
     height: 100%;
+    @apply font-sans;
   }
 
   body {
-    @apply text-white;
-    background: radial-gradient(1200px 600px at 10% 10%, rgba(255,0,0,0.12), transparent 60%),
-                linear-gradient(to bottom, rgb(0,0,0), rgb(2,6,23), rgb(15,23,42));
+    @apply bg-brand-light text-brand-dark antialiased;
+    background-image: radial-gradient(at 0% 0%, rgba(220, 38, 38, 0.05) 0px, transparent 50%),
+                      radial-gradient(at 100% 0%, rgba(37, 99, 235, 0.05) 0px, transparent 50%);
   }
 }
 
-/* ====== COMPONENTES REUTILIZABLES (para TODAS las pantallas) ====== */
+/* ====== COMPONENTES REUTILIZABLES ====== */
 @layer components {
   .page {
-    @apply min-h-screen;
+    @apply min-h-screen flex flex-col;
   }
 
   .container-app {
-    @apply mx-auto w-full max-w-6xl px-4 py-6;
+    @apply mx-auto w-full max-w-7xl px-4 py-8;
   }
 
   .card {
-    @apply rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md p-5 shadow-lg;
+    @apply rounded-3xl bg-white p-6 shadow-xl transition-all duration-300;
   }
 
   .section-title {
-    @apply text-lg sm:text-xl font-semibold;
+    @apply text-2xl font-black text-brand-dark tracking-tight leading-none mb-2;
   }
 
   .muted {
-    @apply text-white/70;
+    @apply text-brand-gray font-medium;
   }
 
   .label {
-    @apply block text-sm font-medium text-white/80 mb-1;
+    @apply block text-xs font-black text-brand-gray uppercase tracking-widest mb-2;
   }
 
   .input, select, textarea {
-    @apply w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white
-           outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-500/40;
+    @apply w-full rounded-2xl border-none bg-brand-light px-4 py-3 text-brand-dark font-medium
+           outline-none focus:ring-4 focus:ring-brand-primary/10 focus:bg-white transition-all shadow-sm;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold
-           border border-white/10 bg-white/5 hover:bg-white/10 transition
-           disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-6 py-3 text-sm font-black uppercase tracking-widest
+           transition-all duration-300 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border-none shadow-md;
   }
 
   .btn-primary {
-    @apply border-red-500/30 bg-red-600/90 hover:bg-red-600 text-white shadow;
+    @apply bg-brand-primary text-white hover:bg-red-700 shadow-lg shadow-brand-primary/20;
   }
 
-  .btn-danger {
-    @apply border-red-500/40 bg-red-600/90 hover:bg-red-700 text-white;
+  .btn-secondary {
+    @apply bg-white text-brand-dark hover:bg-brand-primary hover:text-white;
+  }
+
+  .btn-dark {
+    @apply bg-brand-dark text-white hover:bg-black shadow-lg shadow-brand-dark/20;
   }
 
   .badge {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold border border-white/10 bg-white/5;
+    @apply inline-flex items-center rounded-xl px-3 py-1 text-[10px] font-black uppercase tracking-widest bg-brand-light text-brand-gray border-none shadow-sm;
   }
 
   .badge-red {
-    @apply border-red-500/30 bg-red-500/15 text-red-200;
+    @apply bg-brand-primary/10 text-brand-primary;
+  }
+
+  .badge-blue {
+    @apply bg-brand-secondary/10 text-brand-secondary;
   }
 
   .table-wrap {
-    @apply w-full overflow-x-auto rounded-xl border border-white/10;
-  }
-
-  .table-scroll {
-    @apply max-h-[60vh] overflow-y-auto;
+    @apply w-full overflow-hidden rounded-3xl bg-white shadow-xl;
   }
 
   .table {
-    @apply w-full text-sm min-w-[900px];
+    @apply w-full text-sm text-left border-collapse;
   }
 
   .th {
-    @apply px-3 py-3 text-left whitespace-nowrap bg-white/5;
+    @apply px-6 py-5 font-black text-brand-dark bg-brand-light/50 uppercase tracking-widest text-[11px];
   }
 
   .td {
-    @apply px-3 py-3 whitespace-nowrap border-t border-white/10;
+    @apply px-6 py-5 text-brand-gray font-medium border-b border-brand-light bg-white;
+  }
+
+  .tr-hover {
+    @apply hover:bg-brand-light/50 transition-colors;
+  }
+
+  .scrollbar-elegant {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-brand-primary) transparent;
+  }
+
+  .scrollbar-elegant::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-elegant::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-elegant::-webkit-scrollbar-thumb {
+    background: var(--color-brand-primary);
+    border-radius: 20px;
+    opacity: 0.5;
+  }
+
+  .scrollbar-elegant::-webkit-scrollbar-thumb:hover {
+    background: var(--color-brand-header);
   }
 }

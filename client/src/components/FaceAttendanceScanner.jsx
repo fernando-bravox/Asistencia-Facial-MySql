@@ -5,6 +5,8 @@ import { api } from "../api/client.js";
 export default function FaceAttendanceScanner({ subjectId, enrolledStudents, onMarked }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const lastMarkedRef = useRef(new Map()); // faceId -> timestamp (ms)
+
 
   const [modelsReady, setModelsReady] = useState(false);
   const [running, setRunning] = useState(false);
@@ -102,42 +104,59 @@ export default function FaceAttendanceScanner({ subjectId, enrolledStudents, onM
           const video = videoRef.current;
           if (!video || video.readyState < 2) return;
 
-          const det = await faceapi
-            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
-            .withFaceLandmarks()
-            .withFaceDescriptor();
+          const detections = await faceapi
+  .detectAllFaces(
+    video,
+    new faceapi.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.3 })
+  )
+  .withFaceLandmarks()
+  .withFaceDescriptors();
 
-          if (!det) return;
+if (!detections || detections.length === 0) return;
 
-          let best = { dist: Infinity, student: null };
-          for (const k of known) {
-            const dist = faceapi.euclideanDistance(det.descriptor, k.descriptor);
-            if (dist < best.dist) best = { dist, student: k.student };
-          }
+// ✅ cooldown para no repetir marcaciones del mismo rostro
+const now = Date.now();
+const COOLDOWN_MS = 30_000; // 30s por estudiante
 
-          if (!best.student) return;
-          if (best.dist > MATCH_THRESHOLD) return;
+for (const det of detections) {
+  let best = { dist: Infinity, student: null };
 
-          const fid = best.student.faceId;
-
-          setStatus(`✅ Reconocido: ${best.student.name} (${fid}). Registrando...`);
-
-          try {
-  const r = await markByFaceId(fid);
-
-  if (r?.stored?.status) {
-    setStatus(`✅ Asistencia marcada (${r.stored.status}) para ${best.student.name}`);
-    if (onMarked) await onMarked();
-  } else if (r?.alreadyMarked) {
-    setStatus(`ℹ️ Ya estaba registrado: ${best.student.name}`);
-    if (onMarked) await onMarked();
-  } else {
-    setStatus("✅ Evento enviado.");
-    if (onMarked) await onMarked(); // por si igual guardó algo o cambió estado
+  for (const k of known) {
+    const dist = faceapi.euclideanDistance(det.descriptor, k.descriptor);
+    if (dist < best.dist) best = { dist, student: k.student };
   }
-} catch (e) {
-  setStatus(`⚠️ Reconocido, pero no se pudo marcar: ${e.message}`);
+
+  if (!best.student) continue;
+  if (best.dist > MATCH_THRESHOLD) continue;
+
+  const fid = best.student.faceId;
+
+  // si ya lo marcó hace poco, saltar
+  const last = lastMarkedRef.current.get(fid) || 0;
+  if (now - last < COOLDOWN_MS) continue;
+
+  lastMarkedRef.current.set(fid, now);
+
+  setStatus(`✅ Reconocido: ${best.student.name} (${fid}). Registrando...`);
+
+  try {
+    const r = await markByFaceId(fid);
+
+    if (r?.stored?.status) {
+      setStatus(`✅ Asistencia marcada (${r.stored.status}) para ${best.student.name}`);
+      if (onMarked) await onMarked();
+    } else if (r?.alreadyMarked) {
+      setStatus(`ℹ️ Ya estaba registrado: ${best.student.name}`);
+      if (onMarked) await onMarked();
+    } else {
+      setStatus("✅ Evento enviado.");
+      if (onMarked) await onMarked();
+    }
+  } catch (e) {
+    setStatus(`⚠️ Reconocido, pero no se pudo marcar: ${e.message}`);
+  }
 }
+
 
         }, INTERVAL_MS);
       } catch (_e) {

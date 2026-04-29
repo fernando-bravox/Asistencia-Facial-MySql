@@ -16,6 +16,7 @@ export const db = new Low(adapter, {
   enrollments: [],
   attendance: [],
   attendanceEvents: [],
+  attendanceEvidence: [], // ✅ NUEVO
   settings: []
 });
 
@@ -28,6 +29,7 @@ export async function loadDb() {
     enrollments: [],
     attendance: [],
     attendanceEvents: [],
+    attendanceEvidence: [], // ✅ NUEVO
     settings: []
   };
   await db.write();

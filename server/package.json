@@ -9,14 +9,25 @@
     "seed": "node scripts/seed.js"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.94",
+    "@tensorflow-models/face-detection": "^1.0.3",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "@vladmandic/face-api": "^1.7.15",
     "bcryptjs": "^2.4.3",
+    "canvas": "^3.2.1",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
+    "fs-extra": "^11.3.3",
     "jsonwebtoken": "^9.0.2",
+    "lowdb": "^7.0.1",
+    "luxon": "^3.7.2",
     "mysql2": "^3.16.1",
     "nanoid": "^5.0.7",
-    "nodemailer": "^7.0.12"
+    "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.12",
+    "uuid": "^13.0.0"
   }
 }

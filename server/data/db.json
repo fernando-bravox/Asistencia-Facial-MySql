@@ -702,5 +702,47 @@
       "graceMinutes": 10,
       "updatedAt": "2026-01-11T18:25:20.435Z"
     }
+  ],
+  "attendanceEvidence": [
+    {
+      "id": "79fc3a9b-6ece-40d2-a4d8-c792f8e05a3d",
+      "subjectId": 1,
+      "scheduleId": null,
+      "shotType": "MANUAL",
+      "takenAt": "2026-02-21T17:20:15.266-05:00",
+      "fileName": "sub1_MANUAL_20260221_172015_484f8ec8-8e42-4687-bf26-f8d709005017.jpg",
+      "filePath": "storage\\tapo\\sub1_MANUAL_20260221_172015_484f8ec8-8e42-4687-bf26-f8d709005017.jpg",
+      "expiresAt": "2026-02-28T17:20:15.266-05:00"
+    },
+    {
+      "id": "417af6b1-10c3-4f89-889c-b998fa825497",
+      "subjectId": 1,
+      "scheduleId": null,
+      "shotType": "MANUAL",
+      "takenAt": "2026-02-21T22:01:51.014-05:00",
+      "fileName": "sub1_MANUAL_20260221_220151_4adab803-d572-4f0c-9225-24219d1f7f91.jpg",
+      "filePath": "storage\\tapo\\sub1_MANUAL_20260221_220151_4adab803-d572-4f0c-9225-24219d1f7f91.jpg",
+      "expiresAt": "2026-02-28T22:01:51.014-05:00"
+    },
+    {
+      "id": "940cf526-6f3e-4f28-8062-615943fca4a7",
+      "subjectId": 1,
+      "scheduleId": null,
+      "shotType": "MANUAL",
+      "takenAt": "2026-02-23T00:23:35.698-05:00",
+      "fileName": "sub1_MANUAL_20260223_002335_eeb9acfb-74ac-415e-96e3-46ec77370043.jpg",
+      "filePath": "storage\\tapo\\sub1_MANUAL_20260223_002335_eeb9acfb-74ac-415e-96e3-46ec77370043.jpg",
+      "expiresAt": "2026-03-02T00:23:35.698-05:00"
+    },
+    {
+      "id": "11f51699-89a5-4a3e-9a94-9d1eced3db0c",
+      "subjectId": 1,
+      "scheduleId": null,
+      "shotType": "MANUAL",
+      "takenAt": "2026-02-23T00:26:36.986-05:00",
+      "fileName": "sub1_MANUAL_20260223_002636_76611a04-b278-4c92-ba97-a6012bd15bf3.jpg",
+      "filePath": "storage\\tapo\\sub1_MANUAL_20260223_002636_76611a04-b278-4c92-ba97-a6012bd15bf3.jpg",
+      "expiresAt": "2026-03-02T00:26:36.986-05:00"
+    }
   ]
 }

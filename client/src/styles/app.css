@@ -1,52 +1,156 @@
 :root{
-  /* Fondo */
-  --bg: #f7f9fc;           
-  --bg2:#eef3fb;          
+  /* Paleta moderna Rojo, Blanco y Gris */
+  --bg: #f8fafc;           
+  --bg-dark: #f1f5f9;      
+  
+  --primary: #dc2626;      /* Rojo principal */
+  --primary-hover: #b91c1c;
+  --primary-light: #fef2f2;
+  
+  --text-main: #0f172a;    
+  --text-muted: #64748b;   
+  --text-light: #94a3b8;   
+  
+  --card-bg: #ffffff;
+  --border-color: #e2e8f0;
+  --border-hover: #cbd5e1;
+  
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 
-  /* Superficies */
-  --card:#ffffff;
-  --surface:#f5f8fd;
+  /* Variables faltantes para compatibilidad */
+  --bg2: #f1f5f9;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --radius: 12px;
+  --radius2: 8px;
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow2: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --text: #0f172a;
+  --muted: #64748b;
+  --muted2: #94a3b8;
+  --surface: #f1f5f9;
+  --divider: #e2e8f0;
+  --inputBorder: #e2e8f0;
+  --inputBg: #ffffff;
+  --inputBorderHover: #cbd5e1;
+  --focus: #dc2626;
+  --focusRing: rgba(220, 38, 38, 0.1);
 
-  /* Texto */
-  --text:#0f172a;          
-  --muted:#6b7c93;         
-  --muted2:#9aa9bd;        
+  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+}
 
-  /* Bordes y sombras */
-  --border: rgba(15, 23, 42, 0.08);
-  --border2: rgba(15, 23, 42, 0.14);
-  --divider: rgba(15, 23, 42, 0.08);
-  --shadow: 0 12px 28px rgba(15,23,42,.06);
-  --shadow2: 0 8px 18px rgba(15,23,42,.08);
+/* Reset Global para App Web */
+body {
+  background-color: var(--bg);
+  color: var(--text-main);
+  margin: 0;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
 
-  /* Azul pastel principal */
-  --primary: #5b8cff;       
-  --primaryDark:#3f6de0;
-  --primarySoft:#e6efff;
+/* Contenedor Principal con diseño de App */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
 
-  /* Celeste pastel */
-  --secondary:#7ecbff;     
-  --secondaryDark:#4fb4f5;
+/* Header Estilo Web App */
+.web-header {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
 
-  /* Danger (rojo pastel SOLO para eliminar/logout) */
-  --danger:#f87171;
-  --dangerDark:#ef4444;
-  --dangerSoft:#fee2e2;
+/* Tarjetas con Elevación */
+.glass-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
 
-  /* Focus */
-  --focus:#5b8cff;
-  --focusRing: rgba(91,140,255,.25);
+.glass-card:hover {
+  box-shadow: var(--shadow-lg);
+}
 
-  /* Inputs */
-  --inputBg:#ffffff;
-  --inputBorder: rgba(15,23,42,.14);
-  --inputBorderHover: rgba(15,23,42,.28);
+/* Botones Modernos */
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
 
-  /* Radio */
-  --radius:16px;
-  --radius2:12px;
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px);
+}
 
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+.btn-outline {
+  background-color: white;
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-outline:hover {
+  background-color: var(--bg-dark);
+  border-color: var(--border-hover);
+}
+
+/* Tablas de App Web */
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.data-table th {
+  background: var(--bg-dark);
+  padding: 12px 16px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.data-table td {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.875rem;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tr:hover td {
+  background-color: var(--primary-light);
 }
 
 
@@ -115,44 +219,69 @@ h1,h2,h3{ margin:0 0 10px; }
    BOTONES
    Azul por defecto, rojo SOLO danger
    ========================= */
-.btn{
-  background: linear-gradient(135deg, var(--primary), var(--primaryDark));
-  border:1px solid rgba(0,0,0,.06);
-  color:white;
-  padding:10px 16px;
-  border-radius: 12px;
-  cursor:pointer;
-  font-weight: 800;
-  box-shadow: 0 10px 18px rgba(37,99,235,.18);
-  transition: transform .08s ease, filter .12s ease, box-shadow .12s ease;
+/* Botón principal (estilo por defecto) */
+.btn {
+  background-color: var(--primary);
+  border: 1px solid var(--primary-hover);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
 }
-.btn:hover{ filter: brightness(1.03); }
-.btn:active{ transform: translateY(1px); }
-.btn:disabled{ opacity:.6; cursor:not-allowed; box-shadow:none; }
 
-/* Botón secundario (blanco) */
-.btn.secondary{
-  background: #fff;
+/* Efecto hover para el botón */
+.btn:hover {
+  background-color: var(--primary-hover);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+/* Efecto activo (cuando se presiona el botón) */
+.btn:active {
+  transform: translateY(0px);
+}
+
+/* Botón secundario (Gris/Blanco) */
+.btn.secondary {
+  background-color: #ffffff;
   color: var(--text);
-  border:1px solid var(--border2);
-  box-shadow: var(--shadow2);
-}
-.btn.secondary:hover{
-  border-color: rgba(15,23,42,.28);
+  border: 1px solid var(--border);
 }
 
-/* Botón celeste (opcional) */
-.btn.info{
-  background: linear-gradient(135deg, var(--secondary), var(--secondaryDark));
-  box-shadow: 0 10px 18px rgba(14,165,233,.16);
+.btn.secondary:hover {
+  background-color: var(--surface);
+  border-color: var(--muted2);
 }
 
-/* Danger SOLO para eliminar / cerrar sesión */
-.btn.danger{
-  background: linear-gradient(135deg, var(--danger), var(--dangerDark));
-  box-shadow: 0 10px 18px rgba(220,38,38,.16);
+/* Botón de peligro (rojo) */
+.btn.danger {
+  background-color: #dc3545; /* Fondo rojo */
+  color: white; /* Texto blanco */
+  box-shadow: 0 4px 8px rgba(220, 38, 38, 0.2); /* Sombra roja suave */
 }
 
+/* Hover para botón de peligro */
+.btn.danger:hover {
+  background-color: #c82333; /* Fondo rojo oscuro en hover */
+  filter: brightness(1.1); /* Aumento del brillo */
+}
+
+/* Botón con iconos (si los tienes) */
+.btn.icon {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* Espacio entre el icono y el texto */
+}
+
+.btn.icon svg {
+  width: 16px;
+  height: 16px;
+}
 /* =========================
    INPUTS (sin rojo)
    ========================= */
@@ -369,15 +498,16 @@ hr{ border:none; border-top:1px solid var(--border); margin:16px 0; }
   position: sticky;
   top: 0;
   z-index: 50;
-  background: linear-gradient(135deg, #1e40af, #2563eb, #0ea5e9);
-  color: #fff;
-  box-shadow: 0 10px 30px rgba(37,99,235,.25);
+  background: #ffffff;
+  color: #1f2937;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
 .app-topbar .topbar-inner{
   max-width: 1200px;
   margin: 0 auto;
-  padding: 14px 24px;
+  padding: 12px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -392,15 +522,17 @@ hr{ border:none; border-top:1px solid var(--border); margin:16px 0; }
 }
 
 .topbar-brand .app-name{
-  font-size: 22px;
-  font-weight: 900;
-  letter-spacing: .14em;
-  text-transform: uppercase;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--primary);
+  text-transform: none;
 }
 
 .topbar-brand .app-sub{
-  font-size: 12px;
-  opacity: .9;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
 }
 
 /* Usuario derecha */
@@ -411,12 +543,12 @@ hr{ border:none; border-top:1px solid var(--border); margin:16px 0; }
 }
 
 .topbar-avatar{
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
-  border: 2px solid rgba(255,255,255,.45);
+  border: 1px solid var(--border);
   object-fit: cover;
-  background: #fff;
+  background: var(--surface);
 }
 
 .topbar-user-info{
@@ -427,14 +559,16 @@ hr{ border:none; border-top:1px solid var(--border); margin:16px 0; }
 }
 
 .topbar-user-info .name{
-  font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: .10em;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .topbar-user-info .email{
-  font-size: 12px;
-  opacity: .9;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* Botón logout */
@@ -446,51 +580,36 @@ hr{ border:none; border-top:1px solid var(--border); margin:16px 0; }
 }
 
 .btn-logout{
-  border: 1px solid rgba(255,255,255,.35);
-  background: rgba(255,255,255,.12);
-  color: #fff;
-  padding: 10px 12px;
-  border-radius: 12px;
-  font-weight: 800;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
-  transition: .15s ease;
+  transition: all .15s ease;
 }
 
 .btn-logout:hover{
-  background: rgba(255,255,255,.20);
-}
-
-/* Responsive */
-@media (max-width: 640px){
-  .app-topbar .topbar-inner{
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .topbar-user{
-    justify-content: center;
-  }
-  .topbar-user-info{
-    text-align: center;
-  }
-  .topbar-actions{
-    justify-content: center;
-    margin-left: 0;
-  }
+  background: var(--surface);
+  border-color: var(--muted2);
 }
 
 /* =========================
-   FOOTER CORPORATIVO AZUL
+   FOOTER
    ========================= */
 .app-footer{
-  background: linear-gradient(135deg, #1e40af, #2563eb, #0ea5e9);
-  color: white;
-  box-shadow: 0 -10px 30px rgba(37,99,235,.25);
+  background: #ffffff;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+  margin-top: 40px;
 }
 
 .app-footer .footer-inner{
   max-width:1200px;
   margin:0 auto;
-  padding:18px 24px;
+  padding:24px;
   display:flex;
   align-items:center;
   justify-content:space-between;

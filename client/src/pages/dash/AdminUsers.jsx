@@ -1,14 +1,21 @@
 import * as faceapi from "face-api.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api, getToken } from "../../api/client.js";
-import Toast from "../../components/Toast.jsx";
+import { FaEdit, FaTrash, FaSearch } from "react-icons/fa";
+import { showAlert } from "../../utils/swalHelper.js";
+
+import Swal from 'sweetalert2';
+
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
-  const [msg, setMsg] = useState({ type: "ok", text: "" });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all"); // 'all', 'student', 'professor', 'admin'
+  
 
   // ✅ Mostrar / Ocultar formulario crear usuario
   const [showCreate, setShowCreate] = useState(false);
+  const [activeTab, setActiveTab] = useState("list");
   const createRef = useRef(null);
 const tapoImgRef = useRef(null);
 const [camMode, setCamMode] = useState(null); // "device" | "tapo" | null
@@ -16,14 +23,15 @@ const [camMode, setCamMode] = useState(null); // "device" | "tapo" | null
 
   // Formulario creación
   const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "student",
-    studentCode: "",
-    faceId: "",
-    faceDescriptor: null
-  });
+  name: "",
+  lastname: "",  // Agrega apellido aquí
+  email: "",
+  password: "",
+  role: "student",
+  studentCode: "",
+  faceId: "",
+  faceDescriptor: null
+});
 
   // UI cámara (captura simple)
   const [camOpen, setCamOpen] = useState(false);
@@ -36,6 +44,7 @@ const [matchedUser, setMatchedUser] = useState(null); // usuario con el que coin
 const [editingId, setEditingId] = useState(null);
 const [editForm, setEditForm] = useState({
   name: "",
+  lastname: "",
   role: "student",
   studentCode: ""
 });
@@ -47,6 +56,28 @@ const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const isStudent = useMemo(() => form.role === "student", [form.role]);
 
+  const filteredUsers = useMemo(() => {
+    let result = users;
+
+    // 1. Filtrar por rol
+    if (roleFilter !== "all") {
+      result = result.filter(u => u.role === roleFilter);
+    }
+
+    // 2. Filtrar por búsqueda de texto
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      result = result.filter(u => {
+        const fullName = `${u.name || ""} ${u.lastname || ""}`.toLowerCase();
+        const email = (u.email || "").toLowerCase();
+        const code = (u.studentCode || "").toLowerCase();
+        return fullName.includes(q) || email.includes(q) || code.includes(q);
+      });
+    }
+
+    return result;
+  }, [users, searchQuery, roleFilter]);
+
 const tapoStreamUrl = useMemo(() => {
   const t = getToken();
   const qs = new URLSearchParams();
@@ -54,25 +85,7 @@ const tapoStreamUrl = useMemo(() => {
   qs.set("_", String(Date.now())); // evita caché
   return `/api/admin/camera/stream?${qs.toString()}`;
 }, [camOpen]); // se refresca cuando abres
-async function openTapoCamera() {
-  setMsg({ type: "ok", text: "" });
 
-  if (!isStudent) {
-    setMsg({ type: "err", text: "La captura de rostro es solo para estudiantes (role=student)." });
-    return;
-  }
-  if (!modelsReady) {
-    setMsg({ type: "err", text: "Modelos no cargados. Revisa la carpeta /public/models/." });
-    return;
-  }
-
-  // apaga device camera por si acaso
-  stopCamera();
-
-  // ✅ primero modo, luego abrir panel
-  setCamMode("tapo");
-  setCamOpen(true);
-}
 
 
 
@@ -81,7 +94,7 @@ async function openTapoCamera() {
       const data = await api("/api/admin/users");
       setUsers(data.users);
     } catch (err) {
-      setMsg({ type: "err", text: err.message });
+      showAlert("error", "¡Error!", err.message);
     }
   }
 
@@ -96,11 +109,7 @@ async function openTapoCamera() {
     load();
     loadFaceModels().catch(() => {
       setModelsReady(false);
-      setMsg({
-        type: "err",
-        text:
-          "No se pudieron cargar los modelos de reconocimiento facial. Revisa que existan en client/public/models/."
-      });
+      showAlert("error", "¡Error!", "No se pudieron cargar los modelos de reconocimiento facial. Revisa que existan en client/public/models.");
     });
 
     return () => stopCamera();
@@ -114,8 +123,8 @@ async function openTapoCamera() {
       streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
     } catch (_e) {}
-      setCamMode(null); // ✅ agregado
-
+    setCamMode(null);
+    setCamOpen(false); // ✅ Cierra el modal de captura
   }
 
   function clearCapture() {
@@ -125,19 +134,63 @@ async function openTapoCamera() {
   setMatchedUser(null);  // ✅
 }
 
+async function processCapturedImage(dataUrl) {
+  if (!modelsReady) {
+    showAlert("error", "¡Error!", "Los modelos no están listos. Revisa la carpeta /public/models/.");
+    return;
+  }
+
+  try {
+    const desc = await descriptorFromDataUrl(dataUrl);
+    if (!desc) {
+      showAlert("error", "¡Error!", "No se detectó un rostro claro en la imagen. Intenta con más luz y el rostro centrado.");
+      setForm(f => ({ ...f, faceDescriptor: null }));
+    } else {
+      setForm(f => ({ ...f, faceDescriptor: desc }));
+      const dup = findDuplicateByDescriptor(desc);
+
+      if (dup) {
+        setFaceLocked(true);
+        setMatchedUser(dup.user);
+        showAlert("warning", "¡Atención!", `⚠️ Este rostro ya fue registrado (${dup.user.name || dup.user.email || dup.user.id}). No se puede registrar nuevamente.`);
+      } else {
+        setFaceLocked(false);
+        setMatchedUser(null);
+        showAlert("success", "¡Éxito!", "Rostro detectado y procesado ✅");
+      }
+    }
+  } catch (err) {
+    console.error("Error processing face:", err);
+    showAlert("error", "¡Error!", "Ocurrió un error al procesar el rostro. Reintenta con otra imagen.");
+    setForm(f => ({ ...f, faceDescriptor: null }));
+  }
+}
+
+function handleImageUpload(event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result;
+      setCapturedDataUrl(dataUrl); // Actualiza el estado con la imagen cargada
+      processCapturedImage(dataUrl); // Procesa la imagen como si fuera una captura de cámara
+    };
+    reader.readAsDataURL(file);
+  }
+}
 
   function resetCreateForm() {
     setForm({
-      name: "",
-      email: "",
-      password: "",
-      role: "student",
-      studentCode: "",
-      faceId: "",
-      faceDescriptor: null
-    });
+  name: "",
+  lastname: "", // Reiniciar apellido también
+  email: "",
+  password: "",
+  role: "student",
+  studentCode: "",
+  faceId: "",
+  faceDescriptor: null
+});
     setCapturedDataUrl("");
-    setCamOpen(false);
     stopCamera();
     setFaceLocked(false);  // ✅
 setMatchedUser(null);  // ✅
@@ -145,14 +198,18 @@ setMatchedUser(null);  // ✅
   }
 
   async function openDeviceCamera() {
-    setMsg({ type: "ok", text: "" });
+    Swal.fire({
+  icon: 'success',
+  title: '¡Éxito!',
+  text: 'Cámara abierta correctamente.',
+});
 
     if (!isStudent) {
-      setMsg({ type: "err", text: "La captura de rostro es solo para estudiantes (role=student)." });
+      showAlert("error", "¡Error!", "La captura de rostro es solo para estudiantes (role=student).");
       return;
     }
     if (!modelsReady) {
-      setMsg({ type: "err", text: "Modelos no cargados. Revisa la carpeta /public/models/." });
+      showAlert("error", "¡Error!", "Modelos no cargados. Revisa la carpeta /public/models/.");
       return;
     }
 
@@ -173,9 +230,8 @@ setMatchedUser(null);  // ✅
         await videoRef.current.play();
       }
     } catch (_err) {
-      setCamOpen(false);
       stopCamera();
-      setMsg({ type: "err", text: "No se pudo acceder a la cámara. Revisa permisos del navegador." });
+      showAlert("error", "¡Error!", "No se pudo acceder a la cámara. Revisa permisos del navegador.");
     }
   }
 
@@ -209,9 +265,7 @@ function findDuplicateByDescriptor(desc) {
   return null;
 }
 
-  async function captureFrame() {
-  setMsg({ type: "ok", text: "" });
-
+async function captureFrame() {
   const canvas = canvasRef.current;
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
@@ -219,7 +273,7 @@ function findDuplicateByDescriptor(desc) {
   let w = 640;
   let h = 480;
 
-  // ✅ 1) Captura desde cámara del dispositivo
+  // 1) Captura desde cámara del dispositivo
   if (camMode === "device") {
     const video = videoRef.current;
     if (!video) return;
@@ -232,134 +286,69 @@ function findDuplicateByDescriptor(desc) {
     ctx.drawImage(video, 0, 0, w, h);
   }
 
-  // ✅ 2) Captura desde TP-LINK (stream en <img>)
-  if (camMode === "tapo") {
-    const img = tapoImgRef.current;
-    if (!img) return;
-
-    w = img.naturalWidth || img.width || 640;
-    h = img.naturalHeight || img.height || 480;
-
-    if (!w || !h) {
-      setMsg({ type: "err", text: "La cámara TP-LINK aún no carga imagen. Espera 1-2 segundos e intenta." });
-      return;
-    }
-
+  // 2) Captura de imagen cargada
+  if (!camMode) {
+    // Cuando no hay un modo de cámara activo, tratamos la imagen cargada.
+    const dataUrl = capturedDataUrl; // Usa la imagen cargada
     canvas.width = w;
     canvas.height = h;
+    const img = await faceapi.fetchImage(dataUrl);
     ctx.drawImage(img, 0, 0, w, h);
   }
 
+  // Procesar la imagen capturada
   const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
   setCapturedDataUrl(dataUrl);
 
-  if (!form.faceId) {
-    try {
-      const r = await api("/api/admin/faceid", { method: "POST" });
-      setForm((f) => ({ ...f, faceId: r.faceId }));
-    } catch (_e) {
-      setMsg({ type: "err", text: "No se pudo generar faceId. Intenta nuevamente." });
-    }
-  }
+  await processCapturedImage(dataUrl);
 
-  try {
-    const desc = await descriptorFromDataUrl(dataUrl);
-    if (!desc) {
-      setMsg({
-        type: "err",
-        text: "No se detectó un rostro claro en la captura. Intenta con más luz y el rostro centrado."
-      });
-      setForm((f) => ({ ...f, faceDescriptor: null }));
-    } else {
-  setForm((f) => ({ ...f, faceDescriptor: desc }));
-
-  const dup = findDuplicateByDescriptor(desc);
-
-  if (dup) {
-    setFaceLocked(true);
-    setMatchedUser(dup.user);
-    setMsg({
-      type: "err",
-      text: `⚠️ Este rostro ya fue registrado (${dup.user.name || dup.user.email || dup.user.id}). No se puede registrar nuevamente.`
-    });
-  } else {
-    setFaceLocked(false);
-    setMatchedUser(null);
-    setMsg({ type: "ok", text: "Rostro capturado y procesado ✅" });
-  }
-}
-  } catch (_e) {
-    setMsg({ type: "err", text: "Error procesando el rostro. Reintenta la captura." });
-    setForm((f) => ({ ...f, faceDescriptor: null }));
-  }
-
-  // ✅ cerrar cámara (device o tapo)
   stopCamera();
-  setCamOpen(false);
 }
 
 
   async function createUser(e) {
   e.preventDefault();
-  setMsg({ type: "ok", text: "" });
 
-  try {
-    // ✅ campos básicos obligatorios
-    if (!form.name || !form.email || !form.password || !form.role) {
-      setMsg({ type: "err", text: "Completa nombre, email, contraseña y rol." });
+try {
+  // Validación de nombre
+  if (!form.name) {
+    showAlert("warning", "Atención", "Completa el nombre.");
+    return;
+  }
+
+  // Validación de apellido
+  if (!form.lastname) {
+    showAlert("warning", "Atención", "Completa el apellido.");
+    return;
+  }
+
+  // Validación de correo electrónico
+  if (!form.email) {
+    showAlert("warning", "Atención", "Completa el correo institucional.");
+    return;
+  }
+
+  // Validación de contraseña
+  if (!form.password) {
+    showAlert("warning", "Atención", "Completa la contraseña.");
+    return;
+  }
+
+  // Validación de rol
+  if (!form.role) {
+    showAlert("warning", "Atención", "Selecciona un rol.");
       return;
     }
 
-    // ✅ email básico
+    // Validación de email
     if (!String(form.email).includes("@")) {
-      setMsg({ type: "err", text: "Email inválido. Debe contener '@'." });
+      showAlert("warning", "Atención", 'Email inválido. Debe contener "@".');
       return;
     }
 
-    // ✅ contraseña mínimo 12 caracteres
-    if (String(form.password).length < 12) {
-      setMsg({ type: "err", text: "La contraseña debe tener mínimo 12 caracteres." });
-      return;
-    }
-
-    // ✅ validaciones solo para estudiantes
-    if (isStudent) {
-      const code = String(form.studentCode || "").trim();
-
-      if (!code) {
-        setMsg({ type: "err", text: "El código del estudiante es obligatorio." });
-        return;
-      }
-
-      // solo números
-      if (!/^\d+$/.test(code)) {
-        setMsg({ type: "err", text: "El código del estudiante solo debe contener números." });
-        return;
-      }
-
-      // debe existir captura + descriptor
-      if (!capturedDataUrl || !form.faceDescriptor) {
-        setMsg({ type: "err", text: "Debes capturar el rostro antes de crear al estudiante." });
-        return;
-      }
-
-      // faceId debe estar generado por el escaneo
-      if (!form.faceId) {
-        setMsg({ type: "err", text: "No se generó FaceId. Vuelve a capturar el rostro." });
-        return;
-      }
-    }
-
-    // (tu validación anterior, ya no es necesaria porque arriba lo controlamos,
-    //  pero la dejo por seguridad si quieres)
-    if (form.role === "student" && capturedDataUrl && !form.faceDescriptor) {
-      setMsg({ type: "err", text: "Capturaste imagen pero no se detectó rostro. Repite la captura." });
-      return;
-    }
-
-    // ✅ bloqueo por rostro duplicado
-    if (faceLocked) {
-      setMsg({ type: "err", text: "Este rostro ya fue registrado. No se puede registrar nuevamente." });
+    // Validación de contraseña
+    if (String(form.password).length < 10) {
+      showAlert("warning", "Atención", "La contraseña debe tener mínimo 10 caracteres.");
       return;
     }
 
@@ -367,60 +356,59 @@ function findDuplicateByDescriptor(desc) {
       method: "POST",
       body: {
         name: form.name,
+        lastname: form.lastname,  // Aquí agregamos el apellido
         email: form.email,
         password: form.password,
         role: form.role,
-        studentCode: isStudent ? (form.studentCode || "") : "",
-        // ✅ solo enviar faceId/descriptor si es student
-        faceId: isStudent ? (form.faceId || null) : null,
-        faceDescriptor: isStudent ? (form.faceDescriptor || null) : null
+        studentCode: form.role === "student" ? form.studentCode : "",
+        faceId: form.faceId,
+        faceDescriptor: form.faceDescriptor
       }
     });
+    setUsers([...users, created.user]);
+    showAlert("success", "¡Éxito!", "Usuario creado exitosamente");
 
-    const faceIdToSave = created?.user?.faceId || form.faceId;
-
-    if (capturedDataUrl && faceIdToSave) {
-      setIsSendingFace(true);
-      await api("/api/admin/faces", {
-        method: "POST",
-        body: { faceId: faceIdToSave, imageDataUrl: capturedDataUrl }
-      });
-    }
-
-    await load();
-
-    setMsg({
-      type: "ok",
-      text: faceIdToSave ? `Usuario creado. FaceId: ${faceIdToSave}` : "Usuario creado"
-    });
-
+    // Reiniciar formulario y cargar usuarios
     resetCreateForm();
-    setShowCreate(false);
-
+    setActiveTab("list");
   } catch (err) {
-    setMsg({ type: "err", text: err.message });
-  } finally {
-    setIsSendingFace(false);
+    Swal.fire({
+      icon: 'error',
+      title: '¡Error!',
+      text: err.message,
+    });
   }
 }
 
 
 
   async function removeUser(id) {
-    if (!confirm("¿Eliminar usuario?")) return;
+    const result = await Swal.fire({
+      title: "¿Eliminar usuario?",
+      text: "Esta acción no se puede deshacer.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar"
+    });
+
+    if (!result.isConfirmed) return;
+
     try {
       await api(`/api/admin/users/${id}`, { method: "DELETE" });
       await load();
-      setMsg({ type: "ok", text: "Usuario eliminado" });
+      showAlert("success", "Eliminado", "Usuario eliminado correctamente.");
     } catch (err) {
-      setMsg({ type: "err", text: err.message });
+      showAlert("error", "Error", err.message);
     }
   }
 function startEdit(u) {
-  setMsg({ type: "ok", text: "" });
   setEditingId(u.id);
   setEditForm({
     name: u.name || "",
+    lastname: u.lastname || "",
     role: u.role || "student",
     studentCode: u.studentCode ? String(u.studentCode) : ""
   });
@@ -428,18 +416,16 @@ function startEdit(u) {
 
 function cancelEdit() {
   setEditingId(null);
-  setEditForm({ name: "", role: "student", studentCode: "" });
+  setEditForm({ name: "", lastname: "", role: "student", studentCode: "" });
 }
 
 async function saveEdit() {
-  setMsg({ type: "ok", text: "" });
-
   try {
     if (!editingId) return;
 
     // ✅ validación mínima
-    if (!editForm.name.trim()) {
-      setMsg({ type: "err", text: "El nombre no puede estar vacío." });
+    if (!editForm.name.trim() || !editForm.lastname.trim()) {
+      showAlert("warning", "Atención", "El nombre y el apellido no pueden estar vacíos.");
       return;
     }
 
@@ -447,452 +433,458 @@ async function saveEdit() {
     if (editForm.role === "student") {
       const code = String(editForm.studentCode || "").trim();
       if (!/^\d{4}$/.test(code)) {
-        setMsg({ type: "err", text: "El código del estudiante debe ser exactamente 4 números." });
+        showAlert("warning", "Atención", "El código del estudiante debe ser exactamente 4 números.");
         return;
       }
     }
 
     setIsSavingEdit(true);
 
+    const payload = {
+      name: editForm.name.trim(),
+      lastname: editForm.lastname.trim(),
+      role: editForm.role
+    };
+
+    if (editForm.role === "student") {
+      payload.studentCode = String(editForm.studentCode || "").trim();
+    }
+
     await api(`/api/admin/users/${editingId}`, {
       method: "PUT",
-      body: {
-        name: editForm.name.trim(),
-        role: editForm.role,
-        studentCode: editForm.role === "student" ? String(editForm.studentCode || "").trim() : ""
-      }
+      body: payload
     });
 
-    await load();
-    setMsg({ type: "ok", text: "Usuario actualizado ✅" });
+    setUsers(users.map(u => u.id === editingId ? { 
+      ...u, 
+      name: editForm.name.trim(), 
+      lastname: editForm.lastname.trim(),
+      role: editForm.role, 
+      studentCode: editForm.role === "student" ? editForm.studentCode : "" 
+    } : u));
+    showAlert("success", "Éxito", "Usuario actualizado ✅");
     cancelEdit();
   } catch (err) {
-    setMsg({ type: "err", text: err.message });
+    showAlert("error", "Error", err.message);
   } finally {
     setIsSavingEdit(false);
   }
 }
 
   function toggleCreate() {
-    // Si vas a cerrar, cierro cámara y limpio preview (para que no quede prendida)
-    if (showCreate) {
-      resetCreateForm();
-      setShowCreate(false);
-      return;
-    }
-
-    // Si vas a abrir
-    setShowCreate(true);
-    setTimeout(() => {
-      createRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
+  if (activeTab === "create") {
+    resetCreateForm();
+    setActiveTab("list");
+    return;
   }
+
+  setActiveTab("create");
+  setTimeout(() => {
+    createRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 80);
+}
+const getRolLabel = (role) => {
+  switch (role) {
+    case "student":
+      return "Estudiante";
+    case "professor":
+      return "Profesor";
+    case "admin":
+      return "Administrador";
+    default:
+      return role;
+  }
+};
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 py-6 space-y-6">
-
-      {/* ✅ CARD: HEADER + BOTÓN */}
-      <section className="card w-full">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h2 className="h2">CREAR USUARIO</h2>
-            <p className="muted mt-1">Crea Profesores/Estudiantes y asigna roles.</p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="muted text-sm">
-              Modelos de rostro: <b>{modelsReady ? "OK " : "NO cargados ❌"}</b>
-            </div>
-
-            {/* ✅ Botón principal (AZUL) */}
+    <div className="w-full">
+      <section className="bg-white rounded-[2rem] shadow-2xl overflow-visible">
+        
+        {/* TABS NAVIGATION */}
+        <div className="bg-brand-light p-3">
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              className="btn"
-              onClick={toggleCreate}
-              aria-expanded={showCreate}
+              onClick={() => setActiveTab("list")}
+              className={`flex-1 sm:flex-none px-8 py-3.5 rounded-2xl text-xs font-black tracking-widest transition-all duration-300 ${
+                activeTab === "list"
+                  ? "bg-brand-primary text-black shadow-lg shadow-brand-primary/20"
+                  : "bg-white text-brand-dark hover:bg-brand-primary hover:text-white shadow-sm"
+              }`}
             >
-              {showCreate ? "Ocultar formulario" : "Crear usuario"}
+              LISTADO
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("create")}
+              className={`flex-1 sm:flex-none px-8 py-3.5 rounded-2xl text-xs font-black tracking-widest transition-all duration-300 ${
+                activeTab === "create"
+                  ? "bg-brand-primary text-black shadow-lg shadow-brand-primary/20"
+                  : "bg-white text-brand-dark hover:bg-brand-primary hover:text-white shadow-sm"
+              }`}
+            >
+              NUEVO USUARIO
             </button>
           </div>
         </div>
 
-        <div className="cardDivider" />
+        {/* MAIN CONTENT */}
+        <div className="p-6 sm:p-10">
 
-        <Toast type={msg.type} message={msg.text} />
-
-        {/* ✅ FORM (OCULTO/SHOW) */}
-        <div
-          ref={createRef}
-          className={[
-            "overflow-hidden transition-all duration-300",
-            showCreate ? "max-h-[2000px] opacity-100 mt-4" : "max-h-0 opacity-0"
-          ].join(" ")}
-        >
-          <div className="card w-full !shadow-none !border !border-[var(--border)]">
-            <h2 className="title">FORMULARIO USUARIO</h2>
-
-            <form onSubmit={createUser} className="space-y-3">
-              <div>
-                <label className="form-label">Nombre</label>
-                <input
-                  className="input w-full"
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">Email</label>
-                <input
-                  className="input w-full"
-                  value={form.email}
-                  onChange={e => setForm({ ...form, email: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">Contraseña</label>
-                <input
-  className="input w-full"
-  type="password"
-  value={form.password}
-  minLength={12}
-  required
-  onChange={e => setForm({ ...form, password: e.target.value })}
-/>
-
-              </div>
-
-              <div>
-                <label className="form-label">Rol</label>
-                <select
-                  className="input w-full"
-                  value={form.role}
-                  onChange={e => setForm({ ...form, role: e.target.value })}
-                >
-                  <option value="student">student</option>
-                  <option value="professor">professor</option>
-                  <option value="admin">admin</option>
-                </select>
-              </div>
-
-              {isStudent && (
+          {/* LIST VIEW */}
+          {activeTab === "list" && (
+            <div className="animate-in fade-in duration-500">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-10">
                 <div>
-                  <label className="form-label">Código del estudiante</label>
-                  <input
-  className="input w-full"
-  value={form.studentCode}
-  inputMode="numeric"
-  pattern="[0-9]*"
-  maxLength={4}
-  onChange={(e) => {
-    const onlyNums4 = e.target.value.replace(/\D/g, "").slice(0, 4);
-    setForm({ ...form, studentCode: onlyNums4 });
-  }}
-  placeholder="Ej: 1234"
-/>
-
-
+                  <h1 className="text-3xl font-black text-brand-dark tracking-tighter">Usuarios del Sistema</h1>
+                  <p className="text-sm font-bold text-brand-gray mt-1 uppercase tracking-widest opacity-60">
+                    Gestión de perfiles académicos
+                  </p>
                 </div>
-              )}
 
-              {/*<div>
-                <label className="form-label">FaceId (opcional)</label>
-                <input
-                  className="input w-full"
-                  value={form.faceId}
-                  onChange={e => setForm({ ...form, faceId: e.target.value })}
-                  placeholder="face-001"
-                />
-              </div>*/}
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                  <select
+                    className="input !py-3 !px-4 !w-full sm:!w-48 text-sm font-bold bg-gray-100 border-2 border-gray-200"
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                  >
+                    <option value="all">Todos los Roles</option>
+                    <option value="student">Estudiantes</option>
+                    <option value="professor">Docentes</option>
+                    <option value="admin">Administradores</option>
+                  </select>
 
-              {/* ✅ BOTONES */}
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 flex-wrap pt-2">
-                <button
-                  type="button"
-                  className="btn secondary"
-                   onClick={openTapoCamera}
-                   disabled={!isStudent || !modelsReady}
-                 
-                  title={
-    !isStudent
-      ? "Solo disponible cuando el rol es student"
-      : !modelsReady
-      ? "Modelos no cargados"
-      : "Abrir cámara TP-LINK"
-  }
-                >
-                  Cámara TP-LINK
-                </button>
-
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={openDeviceCamera}
-                  disabled={!isStudent || !modelsReady}
-                  title={
-                    !isStudent
-                      ? "Solo disponible cuando el rol es student"
-                      : !modelsReady
-                      ? "Modelos no cargados"
-                      : "Abrir cámara"
-                  }
-                >
-                  Usar cámara de dispositivo
-                </button>
-
-                {capturedDataUrl && (
-                  <button type="button" className="btn danger" onClick={clearCapture}>
-                    Quitar captura
-                  </button>
-                )}
-              </div>
-
-              {/* ✅ PANEL CÁMARA */}
-              {camOpen && (
-                <div className="mt-3">
-                  <div className="muted mb-2">
-                    Coloca el rostro centrado y presiona <b>Capturar</b>.
-                  </div>
-
-                  {camMode === "device" && (
-  <video
-    ref={videoRef}
-    playsInline
-    className="w-full rounded-xl border border-[var(--border)]"
-  />
-)}
-
-{camMode === "tapo" && (
-  <img
-    ref={tapoImgRef}
-    src={tapoStreamUrl}
-    alt="TP-LINK Stream"
-    className="w-full rounded-xl border border-[var(--border)]"
-    onError={() =>
-      setMsg({ type: "err", text: "No se pudo cargar stream TP-LINK. Revisa /api/admin/camera/stream." })
-    }
-  />
-)}
-
-<canvas ref={canvasRef} className="hidden" />
-
-
-                  <div className="flex flex-col sm:flex-row gap-2 mt-3">
-                    <button type="button" className="btn" onClick={captureFrame}>
-                      Capturar y guardar
-                    </button>
-                    <button
-                      type="button"
-                      className="btn danger"
-                      onClick={() => {
-                        stopCamera();
-                        setCamOpen(false);
-                      }}
-                    >
-                      Cancelar
-                    </button>
+                  <div className="relative w-full sm:w-80 group">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none transition-colors group-focus-within:text-brand-primary">
+                      <FaSearch className="text-brand-gray/50 group-focus-within:text-brand-primary" size={14} />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Buscar por nombre..."
+                      className="w-full pl-11 pr-4 py-3 bg-gray-100 border-2 border-gray-200 focus:border-brand-primary/20 focus:bg-white rounded-2xl text-sm font-bold text-brand-dark transition-all outline-none shadow-sm"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
                   </div>
                 </div>
-              )}
+              </div>
 
-              {/* ✅ PREVIEW */}
-              {capturedDataUrl && (
-                <div className="mt-3">
-                  <div className="muted mb-2">
-                    Captura lista. Rostro:{" "}
-                    <b>{form.faceDescriptor ? "OK ✅" : "NO detectado ❌"}</b>. Se guardará al presionar{" "}
-                    <b>Crear</b>.
+              <div className="table-wrap max-h-[60vh] overflow-y-auto overflow-x-auto scrollbar-elegant bg-white rounded-[2rem] shadow-2xl border border-gray-100 p-6">
+                <table className="w-full border-separate border-spacing-y-4">
+                  <thead className="sticky top-0 z-20 bg-white">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-[11px] font-black text-brand-gray uppercase tracking-widest bg-brand-light/50 rounded-l-2xl">Usuario</th>
+                      <th className="px-6 py-4 text-left text-[11px] font-black text-brand-gray uppercase tracking-widest bg-brand-light/50">Rol</th>
+                      <th className="px-6 py-4 text-left text-[11px] font-black text-brand-gray uppercase tracking-widest bg-brand-light/50">Código</th>
+                      <th className="px-6 py-4 text-left text-[11px] font-black text-brand-gray uppercase tracking-widest bg-brand-light/50 rounded-r-2xl">Acciones</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="before:block before:h-2">
+                    {filteredUsers.map(u => (
+                      <tr key={u.id} className="group transition-all hover:translate-x-1">
+                        <td className="px-6 py-5 bg-brand-light/30 rounded-l-2xl border-y border-l border-transparent group-hover:border-brand-primary/20 group-hover:bg-white group-hover:shadow-md transition-all">
+                          {editingId === u.id ? (
+                            <div className="flex flex-col gap-2">
+                              <input
+                                className="input text-xs"
+                                value={editForm.name}
+                                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                placeholder="Nombres"
+                              />
+                              <input
+                                className="input text-xs"
+                                value={editForm.lastname}
+                                onChange={(e) => setEditForm({ ...editForm, lastname: e.target.value })}
+                                placeholder="Apellidos"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex flex-col">
+                              <span className="font-bold text-brand-dark text-sm sm:text-base">{u.name} {u.lastname}</span>
+                              <span className="text-xs text-brand-gray truncate max-w-[150px] sm:max-w-none">{u.email}</span>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-5 bg-brand-light/30 border-y border-transparent group-hover:border-brand-primary/20 group-hover:bg-white group-hover:shadow-md transition-all">
+                          {editingId === u.id ? (
+                            <select
+                              className="input text-xs"
+                              value={editForm.role}
+                              onChange={(e) => {
+                                const newRole = e.target.value;
+                                setEditForm((p) => ({
+                                  ...p,
+                                  role: newRole,
+                                  studentCode: newRole === "student" ? p.studentCode : ""
+                                }));
+                              }}
+                            >
+                              <option value="student">Estudiante</option>
+                              <option value="professor">Docente</option>
+                              <option value="admin">Administrador</option>
+                            </select>
+                          ) : (
+                            <span className={`badge ${u.role === 'admin' ? 'badge-red' : u.role === 'professor' ? 'badge-blue' : ''}`}>
+                              {getRolLabel(u.role)}
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-5 bg-brand-light/30 border-y border-transparent group-hover:border-brand-primary/20 group-hover:bg-white group-hover:shadow-md transition-all">
+                          {editingId === u.id ? (
+                            editForm.role === "student" ? (
+                              <input
+                                className="input text-xs"
+                                value={editForm.studentCode}
+                                inputMode="numeric"
+                                maxLength={4}
+                                onChange={(e) => {
+                                  const onlyNums4 = e.target.value.replace(/\D/g, "").slice(0, 4);
+                                  setEditForm({ ...editForm, studentCode: onlyNums4 });
+                                }}
+                                placeholder="0000"
+                              />
+                            ) : (
+                              <span className="text-brand-gray/40">-</span>
+                            )
+                          ) : (
+                            <span className="font-mono text-xs font-bold text-brand-dark">{u.studentCode || "-"}</span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-5 bg-brand-light/30 rounded-r-2xl border-y border-r border-transparent group-hover:border-brand-primary/20 group-hover:bg-white group-hover:shadow-md transition-all">
+                          {editingId === u.id ? (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                className="btn btn-primary !py-2 !px-3 !text-[10px]"
+                                onClick={saveEdit}
+                                disabled={isSavingEdit}
+                              >
+                                {isSavingEdit ? "..." : "✓"}
+                              </button>
+
+                              <button
+                                type="button"
+                                className="btn btn-secondary !py-2 !px-3 !text-[10px]"
+                                onClick={cancelEdit}
+                                disabled={isSavingEdit}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => startEdit(u)}
+                                className="p-2 text-brand-gray hover:text-brand-primary hover:bg-brand-primary/10 rounded-xl transition-all"
+                                title="Editar"
+                              >
+                                <FaEdit size={16} />
+                              </button>
+                              <button
+                                onClick={() => removeUser(u.id)}
+                                className="p-2 text-brand-gray hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                                title="Eliminar"
+                              >
+                                <FaTrash size={16} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredUsers.length === 0 && (
+                      <tr>
+                        <td colSpan="4" className="px-6 py-12 text-center text-brand-gray/50 italic bg-brand-light/20 rounded-2xl border-2 border-dashed border-brand-light">
+                          {searchQuery ? "No se encontraron usuarios que coincidan con la búsqueda." : "No se encontraron usuarios registrados."}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* CREATE VIEW */}
+          {activeTab === "create" && (
+            <div ref={createRef} className="animate-in slide-in-from-right-4 duration-500">
+              <div className="mb-8">
+                <h1 className="text-2xl font-black text-brand-dark tracking-tight">Nuevo Usuario</h1>
+                <p className="text-sm font-medium text-brand-gray mt-1">
+                  Registra un nuevo perfil en la plataforma institucional.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <form onSubmit={createUser} className="space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Nombres</label>
+                      <input
+                        className="input"
+                        value={form.name}
+                        onChange={e => setForm({ ...form, name: e.target.value })}
+                        placeholder="Ej: Juan Carlos"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Apellidos</label>
+                      <input
+                        className="input"
+                        value={form.lastname}
+                        onChange={e => setForm({ ...form, lastname: e.target.value })}
+                        placeholder="Ej: Pérez Rodríguez"
+                        required
+                      />
+                    </div>
                   </div>
 
-                  <img
-                    src={capturedDataUrl}
-                    alt="captura"
-                    className="w-full rounded-xl border border-[var(--border)]"
-                  />
-                  {/* 🚫 AVISO DE ROSTRO DUPLICADO */}
-    {faceLocked && matchedUser && (
-      <div className="mt-2 p-3 rounded-xl border border-[var(--border)]">
-        <b style={{ color: "crimson" }}>Rostro ya registrado</b>
-        <div className="muted text-sm">
-          Coincide con:{" "}
-          <b>{matchedUser.name || matchedUser.email || matchedUser.id}</b>
-        </div>
-      </div>
-    )}
-  </div>
-)}
+                  <div>
+                    <label className="label">Correo Institucional</label>
+                    <input
+                      className="input"
+                      type="email"
+                      value={form.email}
+                      onChange={e => setForm({ ...form, email: e.target.value })}
+                      placeholder="ejemplo@espoch.edu.ec"
+                      required
+                    />
+                  </div>
 
-              <div className="pt-3 flex flex-col sm:flex-row gap-2">
-<button
-  className="btn w-full sm:w-auto"
-  type="submit"
-  disabled={isSendingFace || faceLocked}
-  title={faceLocked ? "Rostro ya registrado. Quita la captura para continuar." : ""}
->
-                  {isSendingFace ? "Guardando..." : "Crear"}
-                </button>
+                  <div>
+                    <label className="label">Contraseña</label>
+                    <input
+                      className="input"
+                      type="password"
+                      value={form.password}
+                      minLength={10}
+                      onChange={e => setForm({ ...form, password: e.target.value })}
+                      placeholder="Cédula del estudiante sin guion (10 caracteres)"
+                      required
+                    />
+                  </div>
 
-                <button
-                  type="button"
-                  className="btn secondary w-full sm:w-auto"
-                  onClick={() => {
-                    resetCreateForm();
-                    setShowCreate(false);
-                  }}
-                >
-                  Cancelar
-                </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Rol del Usuario</label>
+                      <select
+                        className="input"
+                        value={form.role}
+                        onChange={e => setForm({ ...form, role: e.target.value })}
+                      >
+                        <option value="student">Estudiante</option>
+                        <option value="professor">Docente</option>
+                        <option value="admin">Administrador</option>
+                      </select>
+                    </div>
+
+                    {isStudent && (
+                      <div className="animate-in zoom-in duration-300">
+                        <label className="label">Código Estudiantil</label>
+                        <input
+                          className="input font-mono"
+                          value={form.studentCode}
+                          inputMode="numeric"
+                          maxLength={4}
+                          onChange={(e) => {
+                            const onlyNums4 = e.target.value.replace(/\D/g, "").slice(0, 4);
+                            setForm({ ...form, studentCode: onlyNums4 });
+                          }}
+                          placeholder="Ej: 1234"
+                          required
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t border-brand-border flex flex-wrap gap-3">
+                    <button type="submit" className="btn btn-primary flex-1 !py-3" disabled={isSendingFace || faceLocked}>
+                      {isSendingFace ? "PROCESANDO..." : "REGISTRAR USUARIO"}
+                    </button>
+                    <button type="button" onClick={resetCreateForm} className="btn btn-secondary !py-3">
+                      LIMPIAR
+                    </button>
+                  </div>
+                </form>
+
+                <div className="space-y-6">
+                  <div className="card !bg-brand-light !p-6 border-dashed border-2">
+                    <h3 className="text-sm font-black text-brand-dark uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <div className="h-2 w-2 bg-brand-primary rounded-full"></div>
+                      Identidad Facial
+                    </h3>
+
+                    <div className="aspect-video bg-white rounded-2xl border border-brand-border overflow-hidden relative flex items-center justify-center shadow-inner">
+                      {capturedDataUrl ? (
+                        <img src={capturedDataUrl} className="w-full h-full object-cover" alt="Captura" />
+                      ) : (
+                        <div className="text-center p-6">
+                          <div className="mx-auto w-12 h-12 bg-brand-primary/10 rounded-full flex items-center justify-center mb-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          </div>
+                          <p className="text-xs font-bold text-brand-gray uppercase tracking-tighter">Sin captura facial</p>
+                        </div>
+                      )}
+                      
+                      {capturedDataUrl && (
+                        <button type="button" onClick={clearCapture} className="absolute top-2 right-2 bg-brand-dark/80 text-white p-1.5 rounded-lg hover:bg-brand-primary">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mt-6 flex flex-col gap-2">
+                      <button type="button" className="btn btn-secondary !w-full" onClick={() => document.getElementById('fileInput').click()}>
+                        SUBIR FOTO
+                      </button>
+                      <input id="fileInput" type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                      <button type="button" className="btn btn-secondary !w-full" onClick={openDeviceCamera} disabled={!isStudent || !modelsReady}>
+                        USAR CÁMARA
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </form>
-          </div>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* ✅ CARD: TABLA USUARIOS */}
-      <section className="card w-full">
-        {/* ✅ TABLA RESPONSIVE */}
-        <div className="mt-2 w-full overflow-x-auto rounded-xl border border-[var(--border)] max-h-[60vh] overflow-y-auto">
-          <table className="min-w-[900px] w-full text-sm table">
-            <thead>
-              <tr className="text-left">
-                <th className="px-3 py-3 whitespace-nowrap">Nombre</th>
-                <th className="px-3 py-3 whitespace-nowrap">Email</th>
-                <th className="px-3 py-3 whitespace-nowrap">Rol</th>
-                <th className="px-3 py-3 whitespace-nowrap hidden md:table-cell">Código</th>
-                <th className="px-3 py-3 whitespace-nowrap hidden lg:table-cell">FaceId</th>
-                <th className="px-3 py-3 whitespace-nowrap"></th>
-              </tr>
-            </thead>
-
-            <tbody>
-  {users.map(u => (
-    <tr key={u.id}>
-      {/* NOMBRE */}
-      <td className="px-3 py-3 whitespace-nowrap">
-        {editingId === u.id ? (
-          <input
-            className="input w-full"
-            value={editForm.name}
-            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-          />
-        ) : (
-          u.name
-        )}
-      </td>
-
-      {/* EMAIL (NO se edita) */}
-      <td className="px-3 py-3 max-w-[240px] truncate">{u.email}</td>
-
-      {/* ROL */}
-      <td className="px-3 py-3 whitespace-nowrap">
-        {editingId === u.id ? (
-          <select
-            className="input w-full"
-            value={editForm.role}
-            onChange={(e) => {
-              const newRole = e.target.value;
-              setEditForm((p) => ({
-                ...p,
-                role: newRole,
-                studentCode: newRole === "student" ? p.studentCode : ""
-              }));
-            }}
-          >
-            <option value="student">student</option>
-            <option value="professor">professor</option>
-            <option value="admin">admin</option>
-          </select>
-        ) : (
-          <span className="badge">{u.role}</span>
-        )}
-      </td>
-
-      {/* CÓDIGO (solo student, 4 números) */}
-      <td className="px-3 py-3 whitespace-nowrap hidden md:table-cell">
-        {editingId === u.id ? (
-          editForm.role === "student" ? (
-            <input
-              className="input w-full"
-              value={editForm.studentCode}
-              inputMode="numeric"
-              maxLength={4}
-              onChange={(e) => {
-                const onlyNums4 = e.target.value.replace(/\D/g, "").slice(0, 4);
-                setEditForm({ ...editForm, studentCode: onlyNums4 });
-              }}
-              placeholder="0000"
-            />
-          ) : (
-            <span className="muted">-</span>
-          )
-        ) : (
-          u.studentCode || "-"
-        )}
-      </td>
-
-      {/* FACEID (solo mostrar) */}
-      <td className="px-3 py-3 whitespace-nowrap hidden lg:table-cell">
-        {u.faceId || "-"}
-      </td>
-
-      {/* ACCIONES */}
-      <td className="px-3 py-3 whitespace-nowrap">
-        {editingId === u.id ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="btn"
-              onClick={saveEdit}
-              disabled={isSavingEdit}
-            >
-              {isSavingEdit ? "Guardando..." : "Guardar"}
-            </button>
-
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={cancelEdit}
-              disabled={isSavingEdit}
-            >
-              Cancelar
-            </button>
+      {/* MODAL CÁMARA */}
+      {camOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-brand-dark/80 backdrop-blur-sm" onClick={stopCamera}></div>
+          <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+            <div className="bg-brand-primary p-4 text-center">
+              <h3 className="text-white font-black uppercase tracking-widest text-sm">Captura Biométrica</h3>
+            </div>
+            <div className="p-6">
+              <div className="aspect-video bg-black rounded-2xl overflow-hidden relative border-4 border-brand-light">
+                <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+                <canvas ref={canvasRef} className="hidden" />
+                <div className="absolute inset-0 border-[40px] border-black/40 pointer-events-none">
+                  <div className="w-full h-full border-2 border-dashed border-white/50 rounded-[10%]"></div>
+                </div>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button onClick={captureFrame} className="btn btn-primary flex-1 !py-4 shadow-xl shadow-brand-primary/20">CAPTURAR ROSTRO</button>
+                <button onClick={stopCamera} className="btn btn-secondary !px-6">CANCELAR</button>
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => startEdit(u)}
-            >
-              Editar
-            </button>
-
-            <button className="btn danger" onClick={() => removeUser(u.id)}>
-              Eliminar
-            </button>
-          </div>
-        )}
-      </td>
-    </tr>
-  ))}
-
-  {users.length === 0 && (
-    <tr>
-      <td colSpan="6" className="px-3 py-4 muted">
-        No hay usuarios
-      </td>
-    </tr>
-  )}
-</tbody>
-
-          </table>
         </div>
-
-        <div className="mt-2 text-xs muted md:hidden">
-          Desliza horizontalmente para ver todas las columnas.
-        </div>
-      </section>
+      )}
     </div>
   );
 }

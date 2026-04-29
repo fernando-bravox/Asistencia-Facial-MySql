@@ -45,7 +45,7 @@ profRouter.get("/subjects/:id/camera/stream", async (req, res) => {
     [
       "-rtsp_transport", "tcp",
       "-i", rtsp,
-      "-vf", "fps=8,scale=640:-1",
+      "-vf", "fps=6,scale=1280:-1",
       "-f", "mpjpeg",
       "-q:v", "6",
       "pipe:1",

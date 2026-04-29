@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../../api/client.js";
-import Toast from "../../components/Toast.jsx";
+import { showAlert } from "../../utils/swalHelper.js";
 
 export default function StudentSubjectDetail() {
   const { id } = useParams();
   const [items, setItems] = useState([]);
   const [subjectInfo, setSubjectInfo] = useState(null);
-  const [msg, setMsg] = useState({ type: "ok", text: "" });
 
   async function load() {
     try {
@@ -21,11 +20,20 @@ export default function StudentSubjectDetail() {
       const found = (subs.subjects || []).find(s => s.id === id);
       setSubjectInfo(found || null);
     } catch (err) {
-      setMsg({ type: "err", text: err.message });
+      showAlert("error", "Error", err.message);
     }
   }
 
   useEffect(() => { load(); }, [id]);
+
+  const getStatusLabel = (status) => {
+    switch (status?.toLowerCase()) {
+      case "present": return "PRESENTE";
+      case "late": return "ATRASADO";
+      case "absent": return "FALTA";
+      default: return status?.toUpperCase() || "N/A";
+    }
+  };
 
   return (
     <div>
@@ -42,21 +50,16 @@ export default function StudentSubjectDetail() {
 
           <Link className="btn secondary" to="/app/student/subjects">Volver</Link>
         </div>
-
-        <div className="mt-3">
-          <Toast type={msg.type} message={msg.text} />
-        </div>
       </div>
 
       <div className="card mt-4">
         <div className="overflow-x-auto">
-          <table className="table min-w-[700px] w-full">
+          <table className="table min-w-[500px] w-full">
             <thead>
               <tr>
                 <th>Fecha/Hora</th>
                 <th>Estado</th>
                 <th>Método</th>
-                <th>Aprobación</th>
               </tr>
             </thead>
             <tbody>
@@ -64,17 +67,16 @@ export default function StudentSubjectDetail() {
                 <tr key={a.id}>
                   <td className="muted">{new Date(a.timestamp).toLocaleString()}</td>
                   <td>
-                    <span className={`badge ${a.status === "present" ? "ok" : "warn"}`}>{a.status}</span>
+                    <span className={`badge ${a.status === "present" ? "ok" : a.status === "late" ? "warn" : "err"}`}>
+                      {getStatusLabel(a.status)}
+                    </span>
                   </td>
                   <td className="muted">{a.method}</td>
-                  <td>
-                    <span className={`badge ${a.approvalStatus === "approved" ? "ok" : "pending"}`}>{a.approvalStatus}</span>
-                  </td>
                 </tr>
               ))}
               {items.length === 0 && (
                 <tr>
-                  <td colSpan="4" className="muted">Sin registros aún</td>
+                  <td colSpan="3" className="muted">Sin registros aún</td>
                 </tr>
               )}
             </tbody>

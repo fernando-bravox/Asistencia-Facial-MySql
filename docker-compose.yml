@@ -1,0 +1,50 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: asispoch_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root12345
+      MYSQL_DATABASE: asispoch
+    volumes:
+      - asispoch_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - asispoch_net
+
+  server:
+    build: ./server
+    container_name: asispoch_server
+    restart: always
+    ports:
+      - "4010:4000"
+    env_file:
+      - ./server/.env
+    volumes:
+      - ./server/storage:/app/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - asispoch_net
+
+  client:
+    build: ./client
+    container_name: asispoch_client
+    restart: always
+    ports:
+      - "3100:80"
+    depends_on:
+      - server
+    networks:
+      - asispoch_net
+
+volumes:
+  asispoch_mysql_data:
+
+networks:
+  asispoch_net:
