@@ -601,12 +601,14 @@ const getRolLabel = (role) => {
                               />
                             </div>
                           ) : (
-                            <div className="flex flex-col">
-                              <span className="font-bold text-brand-dark text-sm sm:text-base">{u.name} {u.lastname}</span>
-                              <span className="text-xs text-brand-gray truncate max-w-[150px] sm:max-w-none">{u.email}</span>
-                            </div>
-                          )}
-                        </td>
+                            <div className="flex flex-col"> 
+                                <span className="font-bold text-brand-dark text-sm sm:text-base">
+                                  {u.name} {u.lastname || ""}
+                                </span> 
+                                <span className="text-xs text-brand-gray truncate max-w-[150px] sm:max-w-none">{u.email}</span> 
+                              </div> 
+                            )} 
+                          </td>
 
                         <td className="px-6 py-5 bg-brand-light/30 border-y border-transparent group-hover:border-brand-primary/20 group-hover:bg-white group-hover:shadow-md transition-all">
                           {editingId === u.id ? (
@@ -764,6 +766,7 @@ const getRolLabel = (role) => {
                       type="password"
                       value={form.password}
                       minLength={10}
+                      maxLength={10}
                       onChange={e => setForm({ ...form, password: e.target.value })}
                       placeholder="Cédula del estudiante sin guion (10 caracteres)"
                       required

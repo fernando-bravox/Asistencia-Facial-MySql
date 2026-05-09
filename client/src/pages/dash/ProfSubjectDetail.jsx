@@ -16,7 +16,7 @@ import {
   FaTimes,
   FaEdit,
   FaChartLine,
-  FaImages
+  FaImage
 } from "react-icons/fa";
 
 import { showAlert } from "../../utils/swalHelper.js";
@@ -44,6 +44,7 @@ const [showStats, setShowStats] = useState(false);
 const [from, setFrom] = useState("");
 const [to, setTo] = useState("");
 const [stats, setStats] = useState([]);
+const [evidence, setEvidence] = useState([]);
 
   // ✅ NUEVO: lista real de estudiantes desde Firestore
   const [allStudents, setAllStudents] = useState([]);
@@ -51,7 +52,30 @@ const [stats, setStats] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
 
   const [schedForm, setSchedForm] = useState({ dayOfWeek: 1, startTime: "13:00", endTime: "15:00" });
-  const [manualForm, setManualForm] = useState({ studentId: "", status: "present" });
+  const [manualForm, setManualForm] = useState({ 
+    studentId: "", 
+    status: "present",
+    date: new Date().toLocaleDateString('en-CA'),
+    scheduleId: "",
+    time: ""
+  });
+
+  // Efecto para ajustar la hora por defecto cuando cambia el horario
+  useEffect(() => {
+    if (manualForm.scheduleId) {
+      const sc = schedules.find(s => s.id === manualForm.scheduleId);
+      if (sc) {
+        // Calcular 15 minutos después del inicio
+        const [h, m] = sc.startTime.split(':').map(Number);
+        const d = new Date();
+        d.setHours(h, m + 15, 0);
+        const defaultTime = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        setManualForm(prev => ({ ...prev, time: defaultTime }));
+      }
+    } else {
+      setManualForm(prev => ({ ...prev, time: "" }));
+    }
+  }, [manualForm.scheduleId, schedules]);
 
   // ✅ abrir/cerrar escáner
   const [scanOpen, setScanOpen] = useState(false);
@@ -63,10 +87,8 @@ const [stats, setStats] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [editTimestamp, setEditTimestamp] = useState("");
 
-  // ✅ Evidencias Tapo
-  const [evidenceShots, setEvidenceShots] = useState([]);
-  const [evidenceVisible, setEvidenceVisible] = useState(3);
-  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [manualQuery, setManualQuery] = useState("");
+  const [manualDropdownOpen, setManualDropdownOpen] = useState(false);
 
   // =========================
   // LOAD ALL
@@ -90,6 +112,14 @@ const [stats, setStats] = useState([]);
 
       const s6 = await api("/api/prof/students");
       setAllStudents(s6.students || []);
+
+      try {
+        const s7 = await api(`/api/prof/subjects/${id}/evidence`);
+        setEvidence(s7.evidence || []);
+      } catch (evErr) {
+        console.error("Error cargando evidencias:", evErr);
+        // No bloqueamos el resto de la página si falla la evidencia
+      }
     } catch (err) {
       showAlert("error", "Error cargando datos", err.message);
     }
@@ -102,17 +132,8 @@ const [stats, setStats] = useState([]);
 
     setStudentQuery("");
     setSelectedStudentId("");
-    setEvidenceShots([]);
-    setEvidenceVisible(3);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
-
-  useEffect(() => {
-    if (activeTab === "evidence") {
-      loadEvidenceShots();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, id]);
 
   // =========================
   // Horarios
@@ -136,18 +157,20 @@ const [stats, setStats] = useState([]);
 function buildRange() {
   if (!filterDate) return { from: null, to: null };
 
+  const [y, mon, d] = filterDate.split("-").map(Number);
+
   // si es "todo el día"
   if (filterScheduleId === "all") {
-    const from = new Date(`${filterDate}T00:00:00`);
-    const to = new Date(`${filterDate}T23:59:59`);
+    const from = new Date(y, mon - 1, d, 0, 0, 0);
+    const to = new Date(y, mon - 1, d, 23, 59, 59);
     return { from, to };
   }
 
   const sc = schedules.find(s => s.id === filterScheduleId);
   if (!sc) return { from: null, to: null };
 
-  const from = new Date(`${filterDate}T${sc.startTime}:00`);
-  const to = new Date(`${filterDate}T${sc.endTime}:59`);
+  const from = new Date(y, mon - 1, d, ...sc.startTime.split(':').map(Number));
+  const to = new Date(y, mon - 1, d, ...sc.endTime.split(':').map(Number), 59);
   return { from, to };
 }
 
@@ -157,9 +180,74 @@ const filteredAttendance = useMemo(() => {
 
   return (attendance || []).filter(a => {
     const t = new Date(a.timestamp);
+    // Ajuste para comparación de fechas sin segundos si es necesario
     return t >= from && t <= to;
   });
 }, [attendance, filterDate, filterScheduleId, schedules]);
+
+const rowsToDisplay = useMemo(() => {
+  // Si no hay fecha de filtro, mostrar lista de estudiantes con su último registro o vacío
+  if (!filterDate) {
+    return (enrollments || []).map(e => ({
+      enrollment: e,
+      attendance: (attendance || []).filter(a => a.studentId === e.studentId).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+    }));
+  }
+
+  // Si hay una fecha seleccionada
+  const { from, to } = buildRange();
+  
+  // Caso 1: Horario específico seleccionado
+  if (filterScheduleId !== "all") {
+    const sc = schedules.find(s => s.id === filterScheduleId);
+    return (enrollments || []).map(e => {
+      const att = filteredAttendance.find(a => 
+        (a.studentId === e.studentId || a.student?.id === e.studentId) &&
+        (a.sessionKey?.includes(sc.startTime) || a.sessionKey?.includes(sc.id) || true) // La sesión ya está filtrada por buildRange
+      );
+      return { enrollment: e, attendance: att, schedule: sc };
+    });
+  }
+
+  // Caso 2: "Todo el día" seleccionado
+  // Queremos mostrar una fila por cada (Estudiante x Horario del día)
+  const [y, mon, day] = filterDate.split("-").map(Number);
+  const dateObj = new Date(y, mon - 1, day);
+  const dayOfWeek = dateObj.getDay();
+  
+  const schedulesToday = schedules.filter(s => Number(s.dayOfWeek) === dayOfWeek);
+
+  if (schedulesToday.length === 0) {
+    // No hay clases este día, mostrar solo estudiantes con "Falta"
+    return (enrollments || []).map(e => ({ enrollment: e, attendance: null }));
+  }
+
+  const rows = [];
+  schedulesToday.forEach(sc => {
+    // Rango de tiempo para este horario específico
+    const scFrom = new Date(y, mon - 1, day, ...sc.startTime.split(':').map(Number));
+    const scTo = new Date(y, mon - 1, day, ...sc.endTime.split(':').map(Number), 59);
+    
+    enrollments.forEach(e => {
+      // Buscar asistencia que caiga en este rango de horario
+      const att = (attendance || []).find(a => {
+        const t = new Date(a.timestamp);
+        const isSameStudent = (String(a.studentId) === String(e.studentId) || String(a.student?.id) === String(e.studentId));
+        return isSameStudent && t >= scFrom && t <= scTo;
+      });
+      rows.push({ enrollment: e, attendance: att, schedule: sc });
+    });
+  });
+
+  return rows.sort((a, b) => {
+    // Ordenar por nombre de estudiante y luego por hora de clase
+    const nameA = (a.enrollment.student?.name || "").toLowerCase();
+    const nameB = (b.enrollment.student?.name || "").toLowerCase();
+    if (nameA !== nameB) return nameA.localeCompare(nameB);
+    return a.schedule.startTime.localeCompare(b.schedule.startTime);
+  });
+
+}, [enrollments, attendance, filterDate, filterScheduleId, schedules, filteredAttendance]);
 
   async function deleteSchedule(scheduleId) {
     const result = await Swal.fire({
@@ -213,10 +301,10 @@ const filteredAttendance = useMemo(() => {
     if (!q) return pool.slice(0, 15);
 
     pool = pool.filter(s => {
-      const name = String(s.name || "").toLowerCase();
+      const fullName = `${s.name || ""} ${s.lastname || ""}`.toLowerCase();
       const email = String(s.email || "").toLowerCase();
       const code = String(s.studentCode || "").toLowerCase();
-      return name.includes(q) || email.includes(q) || code.includes(q);
+      return fullName.includes(q) || email.includes(q) || code.includes(q);
     });
 
     return pool.slice(0, 15);
@@ -278,8 +366,22 @@ const filteredAttendance = useMemo(() => {
   async function manualMark(e) {
     e.preventDefault();
     if (!manualForm.studentId) return showAlert("warning", "Atención", "Selecciona un estudiante.");
+    if (!manualForm.scheduleId) return showAlert("warning", "Atención", "Selecciona un horario.");
+    if (!manualForm.time) return showAlert("warning", "Atención", "Selecciona la hora.");
+    
     try {
-      await api(`/api/prof/subjects/${id}/attendance/manual`, { method: "POST", body: manualForm });
+      // Enviar la fecha y hora exactas en formato "YYYY-MM-DD HH:mm:ss"
+      // Esto evita que el servidor o el navegador apliquen conversiones de zona horaria
+      const timestamp = `${manualForm.date} ${manualForm.time}:00`;
+      
+      await api(`/api/prof/subjects/${id}/attendance/manual`, { 
+        method: "POST", 
+        body: {
+          ...manualForm,
+          timestamp
+        }
+      });
+      
       await loadAll();
       showAlert("success", "Éxito", "Asistencia registrada manualmente.");
     } catch (err) {
@@ -309,33 +411,6 @@ const filteredAttendance = useMemo(() => {
       showAlert("error", "Error", err.message);
     }
   }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
-
-function getApiOrigin() {
-  try {
-    if (API_BASE_URL.startsWith("http")) {
-      return new URL(API_BASE_URL).origin;
-    }
-
-    return "";
-  } catch {
-    return "";
-  }
-}
-
-function getEvidenceImageSrc(img) {
-  const rawUrl = img.imageUrl || img.viewUrl || "";
-
-  if (!rawUrl) return "";
-
-  if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
-    return rawUrl;
-  }
-
-  return `${getApiOrigin()}${rawUrl}`;
-}
-
 
   // =========================
   // Asistencia: borrar
@@ -414,55 +489,6 @@ async function loadStats() {
 
 
   // =========================
-  // Evidencias Tapo
-  // =========================
-  function labelEvidenceShot(shotType) {
-    if (shotType === "EARLY_5") return "Inicio de clase";
-    if (shotType === "GRACE_END") return "Límite / gracia";
-    if (shotType === "MID_30") return "Seguimiento de clase";
-    return shotType || "Evidencia";
-  }
-
-  function formatEvidenceDateTime(value) {
-    if (!value) return { date: "-", hour: "-" };
-
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return { date: "-", hour: "-" };
-
-    return {
-      date: d.toLocaleDateString("es-EC", {
-        day: "numeric",
-        month: "long",
-        year: "numeric"
-      }),
-      hour: d.toLocaleTimeString("es-EC", {
-        hour: "2-digit",
-        minute: "2-digit"
-      })
-    };
-  }
-
-    async function loadEvidenceShots() {
-      try {
-        setEvidenceLoading(true);
-
-        const data = await api(`/api/prof/subjects/${encodeURIComponent(id)}/evidence-all`);
-
-        console.log("📸 Evidencias recibidas:", data);
-
-        setEvidenceShots(data.evidence || []);
-        setEvidenceVisible(3);
-      } catch (err) {
-        console.error("❌ Error cargando evidencias:", err);
-        showAlert("error", "Error cargando evidencias", err.message || "No se pudieron cargar las evidencias");
-        setEvidenceShots([]);
-      } finally {
-        setEvidenceLoading(false);
-      }
-    }
-
-
-  // =========================
   // Export Excel
   // =========================
   async function exportExcel() {
@@ -494,9 +520,20 @@ async function loadStats() {
     const blob = await r.blob();
     const dl = window.URL.createObjectURL(blob);
 
+    const now = new Date();
+    const y = now.getFullYear();
+    const mo = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    const h = String(now.getHours()).padStart(2, "0");
+    const mi = String(now.getMinutes()).padStart(2, "0");
+    
+    const dateStr = `${y}-${mo}-${d}`;
+    const timeStr = `${h}-${mi}`;
+    const subjectName = (subject?.name || "Asistencia").replace(/[^a-z0-9]/gi, "_");
+
     const a = document.createElement("a");
     a.href = dl;
-    a.download = `asistencia_${id}${filterDate ? "_" + filterDate : ""}.xlsx`;
+    a.download = `${subjectName}_${dateStr}_${timeStr}.xlsx`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -512,8 +549,23 @@ async function loadStats() {
   const studentsForSelect = enrollments.map(e => e.student).filter(Boolean);
   const enrolledStudentsForScan = studentsForSelect;
 
+  const filteredManualStudents = useMemo(() => {
+    const q = manualQuery.toLowerCase().trim();
+    if (!q) return studentsForSelect;
+    return studentsForSelect.filter(s => {
+      const fn = `${s.name || ""} ${s.lastname || ""}`.toLowerCase();
+      const email = String(s.email || "").toLowerCase();
+      const code = String(s.studentCode || "").toLowerCase();
+      return fn.includes(q) || email.includes(q) || code.includes(q);
+    });
+  }, [studentsForSelect, manualQuery]);
+
+  const selectedManualStudent = useMemo(() => {
+    return studentsForSelect.find(s => s.id === manualForm.studentId);
+  }, [studentsForSelect, manualForm.studentId]);
+
   // Estadísticas rápidas
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString('en-CA');
   const attendanceTodayCount = useMemo(() => {
     return (attendance || []).filter(a => a.timestamp.startsWith(today)).length;
   }, [attendance, today]);
@@ -553,8 +605,8 @@ async function loadStats() {
           { id: "attendance", label: "Asistencias", icon: FaClipboardList },
           { id: "schedule", label: "Horarios", icon: FaCalendarAlt },
           { id: "enrollment", label: "Estudiantes", icon: FaUserGraduate },
-          { id: "evidence", label: "Evidencias", icon: FaImages },
           { id: "stats", label: "Estadísticas", icon: FaChartLine },
+          { id: "evidence", label: "Evidencia", icon: FaImage },
           { id: "settings", label: "Configuración", icon: FaCog },
         ].map(tab => (
           <button
@@ -587,7 +639,7 @@ async function loadStats() {
               {/* Columna Izquierda: Escáner y Manual */}
               <div className="xl:col-span-1 space-y-6">
                 
-                {/* Escáner Card */}
+                {/* Escáner Card 
                 <div className="card glass-card border-l-4 border-red-600">
                   <h3 className="title flex items-center gap-2">
                     <FaCamera className="text-red-600" />
@@ -640,45 +692,121 @@ async function loadStats() {
                         enrolledStudents={enrolledStudentsForScan}
                         onMarked={async () => {
                           await loadAll();
-                          await loadEvidenceShots();
                           showAlert("success", "¡Éxito!", "Asistencia procesada (Tapo).");
                         }}
                       />
                     </div>
                   )}
                 </div>
-
+*/}
                 {/* Registro Manual Card */}
                 <div className="card glass-card">
                   <h3 className="title text-sm">Registro Manual</h3>
                   <form onSubmit={manualMark} className="mt-3 space-y-3">
-                    <div>
+                    <div className="relative">
                       <label className="label">Estudiante</label>
-                      <select
-                        className="input"
-                        value={manualForm.studentId}
-                        onChange={e => setManualForm({ ...manualForm, studentId: e.target.value })}
+                      
+                      {/* Buscador de Estudiante */}
+                      <div 
+                        className={`input flex items-center justify-between cursor-pointer ${manualDropdownOpen ? 'ring-2 ring-red-500' : ''}`}
+                        onClick={() => setManualDropdownOpen(!manualDropdownOpen)}
                       >
-                        <option value="">-- Seleccionar --</option>
-                        {studentsForSelect.map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
+                        <span className={selectedManualStudent ? "text-brand-dark font-bold" : "text-gray-400"}>
+                          {selectedManualStudent 
+                            ? `${selectedManualStudent.name} ${selectedManualStudent.lastname || ""}` 
+                            : "-- Seleccionar Estudiante --"}
+                        </span>
+                        <FaUserGraduate className="text-gray-400" />
+                      </div>
+
+                      {manualDropdownOpen && (
+                        <div className="absolute z-[60] left-0 right-0 mt-1 bg-white border border-gray-200 shadow-2xl rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                          <div className="p-2 bg-gray-50 border-b border-gray-100 sticky top-0">
+                            <input
+                              autoFocus
+                              className="input text-sm py-1.5"
+                              placeholder="Buscar por nombre, email o código..."
+                              value={manualQuery}
+                              onChange={(e) => setManualQuery(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                          
+                          <div className="max-h-[250px] overflow-y-auto">
+                            {filteredManualStudents.length > 0 ? (
+                              filteredManualStudents.map(s => (
+                                <div
+                                  key={s.id}
+                                  className={`p-3 cursor-pointer transition-all hover:bg-red-50 flex flex-col gap-0.5 ${
+                                    manualForm.studentId === s.id ? "bg-red-50 border-l-4 border-red-500" : "border-l-4 border-transparent"
+                                  }`}
+                                  onClick={() => {
+                                    setManualForm({ ...manualForm, studentId: s.id });
+                                    setManualDropdownOpen(false);
+                                    setManualQuery("");
+                                  }}
+                                >
+                                  <div className="font-bold text-sm text-brand-dark">
+                                    {s.name} {s.lastname || ""}
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                                    {s.studentCode} • {s.email}
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="p-8 text-center text-gray-400 italic text-sm">
+                                No se encontraron estudiantes matriculados
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div>
-                      <label className="label">Estado</label>
-                      <select
-                        className="input"
-                        value={manualForm.status}
-                        onChange={e => setManualForm({ ...manualForm, status: e.target.value })}
-                      >
-                        <option value="present">Presente</option>
-                        <option value="late">Tarde</option>
-                      </select>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="label">Fecha</label>
+                        <input
+                          type="date"
+                          className="input"
+                          value={manualForm.date}
+                          onChange={e => setManualForm({ ...manualForm, date: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Horario</label>
+                        <select
+                          className="input"
+                          value={manualForm.scheduleId}
+                          onChange={e => setManualForm({ ...manualForm, scheduleId: e.target.value })}
+                        >
+                          <option value="">-- Seleccionar --</option>
+                          {schedules.map(sc => (
+                            <option key={sc.id} value={sc.id}>
+                              {DAYS[Number(sc.dayOfWeek)]} {sc.startTime} - {sc.endTime}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
+
+                    {manualForm.scheduleId && (
+                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                        <label className="label">Hora de Registro</label>
+                        <input
+                          type="time"
+                          className="input"
+                          value={manualForm.time}
+                          min={schedules.find(s => s.id === manualForm.scheduleId)?.startTime}
+                          max={schedules.find(s => s.id === manualForm.scheduleId)?.endTime}
+                          onChange={e => setManualForm({ ...manualForm, time: e.target.value })}
+                        />
+                        <p className="text-[10px] text-gray-500 mt-1">
+                          Rango permitido: {schedules.find(s => s.id === manualForm.scheduleId)?.startTime} a {schedules.find(s => s.id === manualForm.scheduleId)?.endTime}
+                        </p>
+                      </div>
+                    )}
 
                     <button className="btn w-full" type="submit">
                       Guardar Manual
@@ -743,7 +871,7 @@ async function loadStats() {
                   <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                     <h3 className="title text-sm mb-0 uppercase tracking-wider">Registros de Asistencia</h3>
                     <div className="badge">
-                      Total: {filteredAttendance.length}
+                      Total Filas: {rowsToDisplay.length}
                     </div>
                   </div>
                   
@@ -759,25 +887,41 @@ async function loadStats() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(enrollments || []).map((e) => {
-                          const student = (allStudents || []).find(s => s.id === e.studentId);
-                          const a = (filteredAttendance || []).find(x => 
-                            (x.studentId === e.studentId) || (x.student?.id === e.studentId)
-                          );
+                        {(rowsToDisplay || []).map((row, idx) => {
+                          const e = row.enrollment;
+                          const a = row.attendance;
+                          const sc = row.schedule;
 
                           const status = a?.status ?? "absent";
                           const timestamp = a?.timestamp ?? null;
                           const method = a?.method ?? "-";
 
                           return (
-                            <tr key={a?.id || `absent-${e.studentId}`}>
+                            <tr key={a?.id || `row-${e.studentId}-${sc?.id || idx}`}>
                               <td>
-                                <div className="font-bold">{a?.student?.name || student?.name || "N/A"}</div>
-                                <div className="text-[10px] muted uppercase">{student?.studentCode || "-"}</div>
+                                <div className="font-bold">
+                                  {a?.student 
+                                    ? <>{a.student.name} {a.student.lastname || ""}</>
+                                    : (e.student ? <>{e.student.name} {e.student.lastname || ""}</> : "N/A")}
+                                </div>
+                                <div className="text-[10px] muted uppercase flex items-center gap-2">
+                                  <span>{a?.student?.studentCode || e.student?.studentCode || "-"}</span>
+                                  {sc && (
+                                    <span className="badge secondary text-[9px] py-0 px-1">
+                                      {sc.startTime} - {sc.endTime}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
 
                               <td className="muted text-xs">
-                                {timestamp ? new Date(timestamp).toLocaleString() : "-"}
+                                {timestamp ? (
+                                  // Si el timestamp viene como string ISO local (YYYY-MM-DDTHH:mm:ss), 
+                                  // lo formateamos directamente para evitar conversiones de zona horaria
+                                  typeof timestamp === 'string' && timestamp.includes('T')
+                                    ? timestamp.replace('T', ' ')
+                                    : new Date(timestamp).toLocaleString()
+                                ) : "-"}
                               </td>
 
                               <td>
@@ -827,147 +971,6 @@ async function loadStats() {
             </div>
           </div>
         )}
-
-        {/* ======================================================
-            TAB: EVIDENCIAS TAPO
-           ====================================================== */}
-        {activeTab === "evidence" && (
-          <div className="space-y-6">
-            <div className="card glass-card">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-4">
-                <div>
-                  <h3 className="title flex items-center gap-2 mb-1">
-                    <FaImages className="text-red-600" />
-                    Evidencias de clases
-                  </h3>
-                  <p className="muted text-sm">
-                    Imágenes tomadas por la cámara Tapo, ordenadas desde la más reciente.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="badge">Total: {evidenceShots.length}</span>
-                  <button
-                    type="button"
-                    className="btn secondary py-2 px-4"
-                    onClick={loadEvidenceShots}
-                    disabled={evidenceLoading}
-                  >
-                    {evidenceLoading ? "Cargando..." : "Actualizar"}
-                  </button>
-                </div>
-              </div>
-
-              {evidenceLoading && evidenceShots.length === 0 ? (
-                <div className="py-14 text-center muted font-bold">
-                  Cargando evidencias...
-                </div>
-              ) : evidenceShots.length === 0 ? (
-                <div className="py-14 text-center">
-                  <FaCamera className="mx-auto text-4xl text-gray-300 mb-3" />
-                  <div className="font-black text-gray-700">No hay imágenes registradas</div>
-                  <div className="muted text-sm mt-1">
-                    Cuando la cámara Tapo tome evidencias, aparecerán aquí.
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 pt-5">
-                    {evidenceShots.slice(0, evidenceVisible).map((img) => {
-                      const taken = formatEvidenceDateTime(img.takenAt || img.createdAt);
-                      const created = formatEvidenceDateTime(img.createdAt);
-                      const expires = formatEvidenceDateTime(img.expiresAt);
-
-                      return (
-                        <div
-                          key={img.id || img.fileName}
-                          className="rounded-2xl border border-gray-100 bg-white overflow-hidden shadow-sm hover:shadow-md transition-all"
-                        >
-                          <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
-                            <img
-                              src={getEvidenceImageSrc(img)}
-                              alt={img.fileName || "Evidencia Tapo"}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                              onError={(e) => {
-                                console.error("❌ No cargó imagen:", img.imageUrl || img.viewUrl);
-                                e.currentTarget.style.display = "none";
-                              }}
-                            />
-
-                            <div className="absolute top-3 left-3">
-                              <span className="badge bg-white/95 text-red-600 shadow-sm">
-                                {labelEvidenceShot(img.shotType)}
-                              </span>
-                            </div>
-
-                            <div className="absolute bottom-3 right-3">
-                              <span className={`badge ${img.expired ? "danger" : "ok"}`}>
-                                {img.expired ? "Expirada" : "Vigente"}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="p-4 space-y-4">
-                            <div>
-                              <div className="font-black text-gray-800 leading-tight">
-                                {labelEvidenceShot(img.shotType)}
-                              </div>
-                              <div className="muted text-[11px] break-all mt-1">
-                                {img.fileName || "Sin nombre de archivo"}
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
-                                <div className="text-[10px] font-black uppercase text-gray-400">Tomada</div>
-                                <div className="text-sm font-black text-gray-800 capitalize">{taken.date}</div>
-                                <div className="text-xs muted mt-0.5">{taken.hour}</div>
-                              </div>
-
-                              <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
-                                <div className="text-[10px] font-black uppercase text-gray-400">Expira</div>
-                                <div className="text-sm font-black text-gray-800 capitalize">{expires.date}</div>
-                                <div className="text-xs muted mt-0.5">{expires.hour}</div>
-                              </div>
-                            </div>
-
-                            <div className="rounded-xl border border-gray-100 p-3 flex items-center justify-between gap-3">
-                              <div>
-                                <div className="text-[10px] font-black uppercase text-gray-400">Creada en base</div>
-                                <div className="text-xs font-bold text-gray-700 capitalize">{created.date}</div>
-                              </div>
-                              <div className="text-xs font-black text-red-600 whitespace-nowrap">
-                                {created.hour}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-5">
-                    <div className="muted text-sm">
-                      Mostrando {Math.min(evidenceVisible, evidenceShots.length)} de {evidenceShots.length} evidencias
-                    </div>
-
-                    {evidenceVisible < evidenceShots.length && (
-                      <button
-                        type="button"
-                        className="btn px-8"
-                        onClick={() => setEvidenceVisible(v => v + 3)}
-                      >
-                        Ver más
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
 
         {/* ======================================================
             TAB: HORARIOS
@@ -1095,7 +1098,9 @@ async function loadStats() {
                         }`}
                         onClick={() => setSelectedStudentId(s.id)}
                       >
-                        <div className="font-bold">{s.name}</div>
+                        <div className="font-bold">
+                          {s.name} {s.lastname || ""}
+                        </div>
                         <div className={`text-xs ${selectedStudentId === s.id ? "text-red-100" : "muted"}`}>
                           {s.studentCode} • {s.email}
                         </div>
@@ -1130,7 +1135,9 @@ async function loadStats() {
                       {enrollments.map(e => (
                         <tr key={e.id}>
                           <td>
-                            <div className="font-bold">{e.student?.name || "N/A"}</div>
+                            <div className="font-bold">
+                              {e.student?.name} {e.student?.lastname || ""}
+                            </div>
                             <div className="text-[10px] muted uppercase">{e.student?.studentCode || "-"}</div>
                           </td>
                           <td className="muted text-sm hidden md:table-cell">{e.student?.email || "N/A"}</td>
@@ -1184,7 +1191,9 @@ async function loadStats() {
                 <tbody>
                   {stats.map(s => (
                     <tr key={s.studentId}>
-                      <td className="font-bold">{s.name}</td>
+                      <td className="font-bold">
+                        {s.name} {s.lastname || ""}
+                      </td>
                       <td className="text-center muted">{s.total}</td>
                       <td className="text-center font-bold text-green-600">{s.attended}</td>
                       <td className="text-center">
@@ -1210,6 +1219,73 @@ async function loadStats() {
         )}
 
         {/* ======================================================
+            TAB: EVIDENCIA
+           ====================================================== */}
+        {activeTab === "evidence" && (
+          <div className="space-y-6">
+            <div className="card glass-card">
+              <h3 className="title flex items-center gap-2">
+                <FaImage className="text-red-600" />
+                Capturas Automáticas (Evidencia)
+              </h3>
+              <p className="muted text-sm">
+                Aquí se muestran las fotos tomadas automáticamente por el sistema Tapo durante las clases de esta asignatura.
+              </p>
+
+              {evidence.length === 0 ? (
+                <div className="p-12 text-center">
+                  <div className="inline-flex p-4 bg-gray-50 rounded-full mb-4">
+                    <FaImage className="text-4xl text-gray-200" />
+                  </div>
+                  <p className="text-gray-400 italic">No hay capturas registradas para esta materia aún.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                  {evidence.map((ev) => (
+                    <div key={ev.id} className="group relative bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300">
+                      <div className="aspect-video overflow-hidden bg-gray-100">
+                        <img 
+                          src={`${import.meta.env.VITE_API_URL || "http://localhost:4000"}${ev.viewUrl}`} 
+                          alt={ev.shot_type}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          onError={(e) => {
+                            e.target.src = "https://placehold.co/600x400?text=Error+al+cargar+imagen";
+                          }}
+                        />
+                      </div>
+                      <div className="p-4 bg-white">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className={`badge ${
+                            ev.shot_type === "MID_30" ? "ok" : "secondary"
+                          } text-[10px] uppercase font-black`}>
+                            {ev.shot_type === "EARLY_5" ? "Inicio" : ev.shot_type === "GRACE_END" ? "Fin Gracia" : "Intermedio"}
+                          </span>
+                          <span className="text-[10px] muted font-mono">{new Date(ev.taken_at).toLocaleTimeString()}</span>
+                        </div>
+                        <p className="text-xs font-bold text-brand-dark mb-1">
+                          {new Date(ev.taken_at).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        </p>
+                        <div className="text-[10px] text-gray-400 truncate">
+                          Archivo: {ev.file_name}
+                        </div>
+                      </div>
+                      <a 
+                        href={`${import.meta.env.VITE_API_URL || "http://localhost:4000"}${ev.viewUrl}`} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold text-sm"
+                      >
+                        Ver Pantalla Completa
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================
             TAB: CONFIGURACIÓN
            ====================================================== */}
         {activeTab === "settings" && (
@@ -1222,9 +1298,9 @@ async function loadStats() {
 
               <form onSubmit={saveSettings} className="mt-6 space-y-6">
                 <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                  <label className="label text-gray-700">Tiempo de Gracia (Minutos)</label>
+                  <label className="label text-gray-700">TIEMPO DE GRACIA PARA EL SEGUNDO BARRIDO (MINUTOS)</label>
                   <p className="text-xs text-gray-500 mb-3">
-                    Define cuántos minutos después del inicio de la clase un estudiante puede marcar "Presente". Pasado este tiempo, se marcará como "Tarde".
+                    Define cuántos minutos después de iniciar la clase se realizará la segunda captura (barrido). Los estudiantes detectados dentro de este tiempo serán registrados como “Presente”. Quienes no sean detectados en este barrido serán registrados como “Falta”.
                   </p>
                   <div className="flex items-center gap-4">
                     <input
@@ -1254,8 +1330,8 @@ async function loadStats() {
           <div className="card glass-card w-full max-w-md animate-in zoom-in-95 duration-200">
             <h3 className="title">Ajustar Registro</h3>
             <div className="muted mt-1 text-sm">
-              Cambiando registro de: <b className="text-gray-700">{editItem?.student?.name}</b>
-            </div>
+                Cambiando registro de: <b className="text-gray-700">{editItem?.student?.name} {editItem?.student?.lastname || ""}</b>
+              </div>
 
             <form onSubmit={saveEditTimestamp} className="mt-6 space-y-4">
               <div>

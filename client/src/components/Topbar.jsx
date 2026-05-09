@@ -78,51 +78,51 @@ export default function Topbar({ user }) {
           {/* Perfil y Salir */}
           <div className="flex items-center gap-4">
             <div className="text-right flex flex-col items-end">
-              <div className="text-sm font-black text-brand-dark truncate leading-none mb-1 uppercase tracking-tighter max-w-[150px] sm:max-w-[250px]">
-                {user?.name} {user?.lastname || ""}
-              </div>
-              <div className="hidden sm:inline-flex items-center bg-brand-light text-brand-primary px-2.5 py-1 rounded-xl text-[11px] font-black uppercase border border-brand-primary/20">
-                {roleNames[user?.role] || user?.role}
-              </div>
-              <div className="sm:hidden text-[10px] font-bold text-brand-gray truncate max-w-[120px]">
-                {user?.email}
-              </div>
-            </div>
-
-            <div className="h-11 w-11 rounded-2xl bg-brand-light border border-brand-border flex items-center justify-center text-brand-primary text-sm font-black shadow-inner overflow-hidden">
-               {user?.image ? <img src={user.image} alt="Avatar" className="w-full h-full object-cover" /> : initials}
-            </div>
-
-            <div className="h-8 w-px bg-brand-border mx-1"></div>
-
-            <button
-              onClick={handleLogout}
-              className="bg-brand-primary p-3 rounded-2xl text-white shadow-lg shadow-brand-primary/30 hover:scale-105 active:scale-95 transition-all"
-              title="Cerrar Sesión"
-            >
-              <FaSignOutAlt size={20} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Navegación Móvil */}
-      <nav className="md:hidden flex items-center justify-center gap-2 pb-3 px-4 overflow-x-auto">
-        {items.map((item) => (
-          <Link
-            key={item.path}
-            to={item.path}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs whitespace-nowrap transition-all duration-300
-              ${location.pathname === item.path 
-                ? 'bg-brand-primary text-white shadow-md' 
-                : 'bg-brand-light text-brand-dark hover:bg-brand-primary/10'
-              }`}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
-    </header>
-  );
-}
+              <div className="text-sm font-black text-brand-dark truncate leading-none mb-1 uppercase tracking-tighter max-w-[150px] sm:max-w-[250px]"> 
+                  {user?.name} {user?.lastname || ""} 
+                </div> 
+                <div className="hidden sm:inline-flex items-center bg-brand-light text-brand-primary px-2.5 py-1 rounded-xl text-[11px] font-black uppercase border border-brand-primary/20"> 
+                  {roleNames[user?.role] || user?.role} 
+                </div> 
+                <div className="sm:hidden text-[10px] font-bold text-brand-gray truncate max-w-[120px]"> 
+                  {user?.email} 
+                </div> 
+              </div> 
+ 
+             <div className="h-11 w-11 rounded-2xl bg-brand-light border border-brand-border flex items-center justify-center text-brand-primary text-sm font-black shadow-inner overflow-hidden"> 
+                {user?.image ? <img src={user.image} alt="Avatar" className="w-full h-full object-cover" /> : initials} 
+             </div> 
+ 
+             <div className="h-8 w-px bg-brand-border mx-1"></div> 
+ 
+             <button 
+               onClick={handleLogout} 
+               className="bg-brand-primary p-3 rounded-2xl text-white shadow-lg shadow-brand-primary/30 hover:scale-105 active:scale-95 transition-all" 
+               title="Cerrar Sesión" 
+             > 
+               <FaSignOutAlt size={20} /> 
+             </button> 
+           </div> 
+         </div> 
+       </div> 
+ 
+       {/* Navegación Móvil */} 
+       <nav className="md:hidden flex items-center justify-center gap-2 pb-3 px-4 overflow-x-auto"> 
+         {items.map((item) => ( 
+           <Link 
+             key={item.path} 
+             to={item.path} 
+             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs whitespace-nowrap transition-all duration-300 
+               ${location.pathname === item.path 
+                 ? 'bg-brand-primary text-white shadow-md' 
+                 : 'bg-brand-light text-brand-dark hover:bg-brand-primary/10' 
+               }`} 
+           > 
+             {item.icon} 
+             <span>{item.label}</span> 
+           </Link> 
+         ))} 
+       </nav> 
+     </header> 
+   ); 
+ }

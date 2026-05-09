@@ -137,16 +137,16 @@ for (const det of detections) {
 
   lastMarkedRef.current.set(fid, now);
 
-  setStatus(`✅ Reconocido: ${best.student.name} (${fid}). Registrando...`);
+  setStatus(`✅ Reconocido: ${best.student.name} ${best.student.lastname || best.student.lastName || ""} (${fid}). Registrando...`);
 
   try {
     const r = await markByFaceId(fid);
 
     if (r?.stored?.status) {
-      setStatus(`✅ Asistencia marcada (${r.stored.status}) para ${best.student.name}`);
+      setStatus(`✅ Asistencia marcada (${r.stored.status}) para ${best.student.name} ${best.student.lastname || best.student.lastName || ""}`);
       if (onMarked) await onMarked();
     } else if (r?.alreadyMarked) {
-      setStatus(`ℹ️ Ya estaba registrado: ${best.student.name}`);
+      setStatus(`ℹ️ Ya estaba registrado: ${best.student.name} ${best.student.lastname || best.student.lastName || ""}`);
       if (onMarked) await onMarked();
     } else {
       setStatus("✅ Evento enviado.");

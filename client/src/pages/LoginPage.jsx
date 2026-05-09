@@ -150,11 +150,8 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-12 text-center">
-              <p className="text-sm font-bold text-brand-gray">
-                ¿Aún no tienes cuenta?{" "}
-                <a href="/register" className="text-brand-primary font-black hover:underline underline-offset-4">
-                  REGÍSTRATE AHORA
-                </a>
+              <p className="text-sm font-bold text-brand-gray uppercase tracking-widest opacity-50">
+                Sistema de Gestión Institucional
               </p>
             </div>
           </div>
