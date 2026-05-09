@@ -16,7 +16,7 @@ function createTransporter() {
   const SMTP_SECURE = String(process.env.SMTP_SECURE || "true") === "true";
 
   if (!SMTP_USER || !SMTP_PASS) {
-    console.log("⚠️ No se detectó SMTP_USER o SMTP_PASS en el .env.");
+    console.log("⚠️ No se detectó SMTP_USER o SMTP_PASS en el archivo .env.");
     return null;
   }
 
@@ -34,7 +34,7 @@ function createTransporter() {
 }
 
 function getFrom() {
-  return `"Asistencia Facial ESPOCH" <${process.env.SMTP_USER}>`;
+  return `"Sistema de Asistencia ASISPOCH" <${process.env.SMTP_USER}>`;
 }
 
 function formatDateEcuador(timestampISO) {
@@ -66,7 +66,9 @@ function getStatusColor(status) {
   return "#2D3748";
 }
 
-// ✅ Correo de asistencia
+// ===============================
+// CORREO DE ASISTENCIA
+// ===============================
 export async function sendAttendanceEmail({
   to,
   studentName,
@@ -75,7 +77,9 @@ export async function sendAttendanceEmail({
   timestampISO,
 }) {
   console.log(
-    `\n📧 [ASISTENCIA] Notificación para ${studentName || "estudiante"} (${to}): ${status} en ${subjectName || "N/D"}\n`
+    `\n📧 [ASISTENCIA] Notificación para ${studentName || "estudiante"} (${to}): ${
+      status || "N/D"
+    } en ${subjectName || "N/D"}\n`
   );
 
   if (!to) {
@@ -86,7 +90,9 @@ export async function sendAttendanceEmail({
   const t = createTransporter();
 
   if (!t) {
-    console.log("⚠️ No se detectó configuración SMTP. Notificación de asistencia solo logueada.");
+    console.log(
+      "⚠️ No se detectó configuración SMTP. Notificación de asistencia solo logueada."
+    );
     return { messageId: "logged-only" };
   }
 
@@ -97,17 +103,20 @@ export async function sendAttendanceEmail({
   try {
     const info = await t.sendMail({
       from: getFrom(),
+      replyTo: process.env.SMTP_USER,
       to,
-      subject: `Registro de asistencia: ${subjectName || "Materia"}`,
+      subject: `Registro de asistencia - Sistema de Asistencia ASISPOCH`,
       text: `Hola ${studentName || "estudiante"},
 
-Se ha registrado tu asistencia.
+Se ha registrado tu asistencia en el Sistema de Asistencia ASISPOCH.
 
 Materia: ${subjectName || "N/D"}
 Fecha y hora: ${date}
 Estado: ${statusLabel}
 
-Sistema de Asistencia Facial - ESPOCH`,
+Este es un mensaje automático. Por favor, no respondas a este correo.
+
+Sistema de Asistencia ASISPOCH`,
       html: `
         <div style="background:#f4f6f9;padding:20px;font-family:Arial,sans-serif">
           <div style="max-width:600px;margin:auto;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #e0e0e0">
@@ -124,11 +133,12 @@ Sistema de Asistencia Facial - ESPOCH`,
               </p>
 
               <p>
-                Se ha registrado tu asistencia para la materia:
-                <b>${subjectName || "N/D"}</b>.
+                Se ha registrado tu asistencia en el
+                <b>Sistema de Asistencia ASISPOCH</b>.
               </p>
 
               <div style="background:#f8fafc;padding:15px;border-radius:8px;margin:20px 0">
+                <p style="margin:5px 0"><b>Materia:</b> ${subjectName || "N/D"}</p>
                 <p style="margin:5px 0"><b>Fecha y hora:</b> ${date}</p>
                 <p style="margin:5px 0">
                   <b>Estado:</b>
@@ -138,13 +148,13 @@ Sistema de Asistencia Facial - ESPOCH`,
                 </p>
               </div>
 
-              <p style="font-size:13px;color:#5f6368">
-                Este es un mensaje automático, por favor no respondas a este correo.
+              <p style="font-size:14px;color:#5f6368">
+                Este es un mensaje automático. Por favor, no respondas a este correo.
               </p>
             </div>
 
             <div style="padding:12px 18px;background:#f9fafb;color:#5f6368;font-size:12px;text-align:center">
-              Sistema de Asistencia Facial - ESPOCH
+              Sistema de Asistencia ASISPOCH
             </div>
 
           </div>
@@ -160,7 +170,9 @@ Sistema de Asistencia Facial - ESPOCH`,
   }
 }
 
-// ✅ Correo de recuperación de contraseña
+// ===============================
+// CORREO DE RECUPERACIÓN DE CONTRASEÑA
+// ===============================
 export async function sendResetCode(email, code) {
   console.log(`\n🔑 [RECUPERACIÓN] Código para ${email}: ${code}\n`);
 
@@ -172,42 +184,51 @@ export async function sendResetCode(email, code) {
   const t = createTransporter();
 
   if (!t) {
-    console.log("⚠️ No se detectó configuración SMTP. El código se mostró arriba en consola.");
+    console.log(
+      "⚠️ No se detectó configuración SMTP. El código se mostró arriba en consola."
+    );
     return { messageId: "logged-only" };
   }
 
   try {
     const info = await t.sendMail({
       from: getFrom(),
+      replyTo: process.env.SMTP_USER,
       to: email,
-      subject: "Código de recuperación de contraseña",
+      subject: "Restablecimiento de contraseña - Sistema de Asistencia ASISPOCH",
       text: `Hola,
 
-Has solicitado restablecer tu contraseña en el Sistema de Asistencia Facial ESPOCH.
+Se ha solicitado el restablecimiento de contraseña para tu cuenta en el Sistema de Asistencia ASISPOCH.
 
-Tu código de recuperación es: ${code}
+Tu código de verificación es: ${code}
 
 Este código expirará en 15 minutos.
 
-Si no solicitaste este cambio, puedes ignorar este correo.`,
+Si no realizaste esta solicitud, puedes ignorar este mensaje.
+
+Sistema de Asistencia ASISPOCH`,
       html: `
         <div style="background:#f4f6f9;padding:20px;font-family:Arial,sans-serif">
           <div style="max-width:600px;margin:auto;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #e0e0e0">
 
             <div style="background:#1a73e8;color:#ffffff;padding:14px 18px">
               <h2 style="margin:0;font-size:18px;font-weight:600">
-                Recuperación de contraseña
+                Restablecimiento de contraseña
               </h2>
             </div>
 
             <div style="padding:20px;color:#202124">
               <p style="margin-top:0">
-                Has solicitado restablecer tu contraseña en el
-                <b>Sistema de Asistencia Facial ESPOCH</b>.
+                Hola,
               </p>
 
               <p>
-                Usa el siguiente código para continuar con el proceso:
+                Se ha solicitado el restablecimiento de contraseña para tu cuenta en el
+                <b>Sistema de Asistencia ASISPOCH</b>.
+              </p>
+
+              <p>
+                Utiliza el siguiente código de verificación para continuar con el proceso:
               </p>
 
               <div style="background:#f1f3f4;padding:20px;text-align:center;font-size:32px;font-weight:bold;letter-spacing:6px;border-radius:8px;margin:20px 0;color:#1a73e8">
@@ -219,12 +240,12 @@ Si no solicitaste este cambio, puedes ignorar este correo.`,
               </p>
 
               <p style="font-size:14px;color:#5f6368">
-                Si no solicitaste este cambio, puedes ignorar este correo.
+                Si no realizaste esta solicitud, puedes ignorar este mensaje.
               </p>
             </div>
 
             <div style="padding:12px 18px;background:#f9fafb;color:#5f6368;font-size:12px;text-align:center">
-              Sistema de Asistencia Facial - ESPOCH
+              Sistema de Asistencia ASISPOCH
             </div>
 
           </div>
