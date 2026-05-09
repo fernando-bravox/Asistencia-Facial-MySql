@@ -2,11 +2,49 @@ import { Router } from "express";
 import { nanoid } from "nanoid";
 import { comparePassword, hashPassword, signToken } from "../utils/auth.js";
 import { requireAuth } from "../middleware/requireAuth.js";
-import { findOne, upsert } from "../utils/mysqlDb.js";
+import { findOne, upsert, getById } from "../utils/mysqlDb.js";
 import { pool } from "../utils/mysqlPool.js";
 import { sendResetCode } from "../utils/mailer.js";
 
 export const authRouter = Router();
+
+function cleanText(value) {
+  return String(value || "").trim();
+}
+
+function getLastname(user) {
+  return cleanText(user?.lastname || user?.lastName || user?.last_name);
+}
+
+function getStudentCode(user) {
+  return cleanText(
+    user?.studentCode ||
+      user?.student_code ||
+      user?.studentcode ||
+      user?.code
+  );
+}
+
+function buildPublicUser(user) {
+  const lastname = getLastname(user);
+  const studentCode = getStudentCode(user);
+
+  const fullName =
+    cleanText(user?.fullName || user?.fullname || user?.full_name) ||
+    `${cleanText(user?.name)} ${lastname}`.trim();
+
+  return {
+    id: user.id,
+    name: cleanText(user.name),
+    lastname,
+    fullName,
+    email: user.email,
+    role: user.role,
+    studentCode,
+    student_code: studentCode,
+    faceId: user.faceId || user.face_id || null,
+  };
+}
 
 // ===============================
 // RECUPERACIÓN DE CONTRASEÑA
@@ -28,25 +66,19 @@ authRouter.post("/forgot-password", async (req, res) => {
       return res.status(404).json({ error: "Usuario no encontrado" });
     }
 
-    // Generar código de 6 dígitos
     const code = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Expira en 15 minutos
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-    // Eliminar códigos anteriores de ese correo
-    await pool.query(
-      "DELETE FROM password_resets WHERE email = ?",
-      [cleanEmail]
-    );
+    await pool.query("DELETE FROM password_resets WHERE email = ?", [
+      cleanEmail,
+    ]);
 
-    // Guardar nuevo código
     await pool.query(
       "INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, ?)",
       [cleanEmail, code, expiresAt]
     );
 
-    // Enviar código por correo
     await sendResetCode(cleanEmail, code);
 
     return res.json({
@@ -114,7 +146,6 @@ authRouter.post("/reset-password", async (req, res) => {
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanCode = String(code).trim();
 
-    // Verificar código antes de cambiar la contraseña
     const [rows] = await pool.query(
       "SELECT * FROM password_resets WHERE email = ? AND code = ? AND expires_at > NOW()",
       [cleanEmail, cleanCode]
@@ -128,17 +159,14 @@ authRouter.post("/reset-password", async (req, res) => {
 
     const passwordHash = await hashPassword(newPassword);
 
-    // Tu columna real en MySQL es password_hash
-    await pool.query(
-      "UPDATE users SET password_hash = ? WHERE email = ?",
-      [passwordHash, cleanEmail]
-    );
+    await pool.query("UPDATE users SET password_hash = ? WHERE email = ?", [
+      passwordHash,
+      cleanEmail,
+    ]);
 
-    // Borrar código usado
-    await pool.query(
-      "DELETE FROM password_resets WHERE email = ?",
-      [cleanEmail]
-    );
+    await pool.query("DELETE FROM password_resets WHERE email = ?", [
+      cleanEmail,
+    ]);
 
     return res.json({
       message: "Contraseña actualizada correctamente",
@@ -159,7 +187,8 @@ authRouter.post("/reset-password", async (req, res) => {
 
 authRouter.post("/register", async (req, res) => {
   try {
-    const { name, lastname, email, password, faceId } = req.body || {};
+    const { name, lastname, email, password, faceId, studentCode } =
+      req.body || {};
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: "Faltan campos" });
@@ -172,8 +201,9 @@ authRouter.post("/register", async (req, res) => {
     }
 
     const cleanEmail = String(email).trim().toLowerCase();
-    const cleanName = String(name).trim();
-    const cleanLastname = String(lastname || "").trim();
+    const cleanName = cleanText(name);
+    const cleanLastname = cleanText(lastname);
+    const cleanStudentCode = cleanText(studentCode);
 
     const exists = await findOne("users", "email", cleanEmail);
 
@@ -189,16 +219,16 @@ authRouter.post("/register", async (req, res) => {
       name: cleanName,
       lastname: cleanLastname,
       email: cleanEmail,
-
-      // Se deja passwordHash porque tu utilidad mysqlDb seguramente lo convierte a password_hash.
       passwordHash,
-
       role: "student",
+      studentCode: cleanStudentCode || null,
       faceId: faceId || null,
       createdAt: new Date().toISOString(),
     };
 
     await upsert("users", userId, user);
+
+    const savedUser = await getById("users", userId);
 
     const token = signToken({
       id: userId,
@@ -207,14 +237,7 @@ authRouter.post("/register", async (req, res) => {
 
     return res.status(201).json({
       token,
-      user: {
-        id: userId,
-        name: user.name,
-        lastname: user.lastname || "",
-        fullName: `${user.name || ""} ${user.lastname || ""}`.trim(),
-        email: user.email,
-        role: user.role,
-      },
+      user: buildPublicUser(savedUser || { id: userId, ...user }),
     });
   } catch (err) {
     console.error("register error:", err);
@@ -246,7 +269,6 @@ authRouter.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Credenciales incorrectas" });
     }
 
-    // Compatible con passwordHash y password_hash
     const storedHash = user.passwordHash || user.password_hash;
 
     if (!storedHash) {
@@ -266,18 +288,9 @@ authRouter.post("/login", async (req, res) => {
       role: user.role,
     });
 
-    const lastname = user.lastname || user.lastName || user.last_name || "";
-
     return res.json({
       token,
-      user: {
-        id: user.id,
-        name: user.name,
-        lastname,
-        fullName: `${user.name || ""} ${lastname}`.trim(),
-        email: user.email,
-        role: user.role,
-      },
+      user: buildPublicUser(user),
     });
   } catch (err) {
     console.error("login error:", err);
@@ -294,17 +307,28 @@ authRouter.post("/login", async (req, res) => {
 // ===============================
 
 authRouter.get("/me", requireAuth(), async (req, res) => {
-  const lastname =
-    req.user.lastname || req.user.lastName || req.user.last_name || "";
+  try {
+    const userId = req.user?.id;
 
-  res.json({
-    user: {
-      id: req.user.id,
-      name: req.user.name,
-      lastname,
-      fullName: `${req.user.name || ""} ${lastname}`.trim(),
-      email: req.user.email,
-      role: req.user.role,
-    },
-  });
+    if (!userId) {
+      return res.status(401).json({ error: "Usuario no autenticado" });
+    }
+
+    const user = await getById("users", userId);
+
+    if (!user) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    return res.json({
+      user: buildPublicUser(user),
+    });
+  } catch (err) {
+    console.error("me error:", err);
+
+    return res.status(500).json({
+      error: "Error interno al cargar el usuario",
+      detail: err?.message || String(err),
+    });
+  }
 });
