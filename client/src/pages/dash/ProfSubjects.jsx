@@ -6,7 +6,17 @@ import { Link } from "react-router-dom";
 import { showAlert } from "../../utils/swalHelper.js";
 import Swal from "sweetalert2";
 
-const ROOMS = Array.from({ length: 9 }, (_, i) => `TI PAO ${i + 1}`);
+const ROOMS = [
+  "NIVELACIÓN TI",
+  "TI PAO 1",
+  "TI PAO 2",
+  "TI PAO 3",
+  "TI PAO 4",
+  "TI PAO 5",
+  "TI PAO 6",
+  "TI PAO 7",
+  "TI PAO 8",
+];
 
 
 export default function ProfSubjects() {
@@ -52,16 +62,25 @@ export default function ProfSubjects() {
     }
   }
 
-  function openEditModal(s) {
-    setEditItem(s);
-    setEditForm({
-      name: s?.name || "",
-      room: s?.room && ROOMS.includes(String(s.room).toUpperCase())
-        ? String(s.room).toUpperCase()
-        : ROOMS[0]
-    });
-    setEditOpen(true);
-  }
+  function normalizeRoom(room) {
+  const value = String(room || "").trim().toUpperCase();
+
+  if (value === "NIVELACION TI") return "NIVELACIÓN TI";
+  if (value === "NIVELACIÓN TI") return "NIVELACIÓN TI";
+
+  if (ROOMS.includes(value)) return value;
+
+  return ROOMS[0];
+}
+
+function openEditModal(s) {
+  setEditItem(s);
+  setEditForm({
+    name: s?.name || "",
+    room: normalizeRoom(s?.room),
+  });
+  setEditOpen(true);
+}
 
   async function saveEdit(e) {
     e.preventDefault();
