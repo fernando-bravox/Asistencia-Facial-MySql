@@ -22,7 +22,13 @@ export function requireAuth() {
       const user = await getById("users", decoded.sub);
       if (!user) return res.status(401).json({ error: "Usuario inválido" });
 
-      req.user = { id: user.id, role: user.role, email: user.email, name: user.name };
+      req.user = { 
+        id: user.id, 
+        role: user.role, 
+        email: user.email, 
+        name: user.name,
+        lastname: user.lastname || "" // ✅ agregado
+      };
       next();
     } catch (_e) {
       return res.status(401).json({ error: "Token inválido o expirado" });

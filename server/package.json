@@ -27,7 +27,7 @@
     "mysql2": "^3.16.1",
     "nanoid": "^5.0.7",
     "node-cron": "^4.2.1",
-    "nodemailer": "^7.0.12",
+    "nodemailer": "^7.0.13",
     "uuid": "^13.0.0"
   }
 }

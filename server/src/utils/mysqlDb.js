@@ -28,6 +28,9 @@ function selectSql(table) {
         role,
         student_code AS studentCode,
         name,
+        lastname,
+        lastname AS lastName,
+        lastname AS last_name,
         email,
         password_hash AS passwordHash,
         face_id AS faceId,
@@ -168,6 +171,9 @@ export async function queryWhere(table, field, op, value) {
     createdAt: "created_at",
 
     // users
+    lastname: "lastname",
+    lastName: "lastname",
+    last_name: "lastname",
     studentCode: "student_code",
     passwordHash: "password_hash",
     faceId: "face_id",
@@ -252,6 +258,9 @@ function mapFieldsToDb(data) {
     updatedAt: "updated_at",
 
     // users
+    lastname: "lastname",
+    lastName: "lastname",
+    last_name: "lastname",
     studentCode: "student_code",
     passwordHash: "password_hash",
     faceId: "face_id",

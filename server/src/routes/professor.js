@@ -10,6 +10,8 @@ import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 
 import { matchSchedule } from "../utils/time.js";
 
+import { pool } from "../utils/mysqlPool.js";
+
 // ✅ MySQL helpers
 import { queryWhere, findOne, getById, upsert, remove } from "../utils/mysqlDb.js";
 
@@ -107,14 +109,14 @@ async function generateUniqueSubjectCode() {
 // ✅ LISTAR ESTUDIANTES (ComboBox)
 // =========================
 profRouter.get("/students", async (_req, res) => {
-  const students = await queryWhere("users", "role", "==", "student");
+  const [students] = await pool.query("SELECT id, name, lastname, email, student_code FROM users WHERE role = 'student'");
   res.json({
     students: (students || []).map((s) => ({
       id: s.id,
-      name: s.name || "",
-      email: s.email || "",
-      studentCode: s.studentCode || "",
-      faceId: s.faceId || null,
+      name: s.name,
+      lastname: s.lastname || "",
+      email: s.email,
+      studentCode: s.student_code || "",
     })),
   });
 });
@@ -280,20 +282,23 @@ profRouter.get("/subjects/:id/enrollments", async (req, res) => {
 
   const enrollments = await Promise.all(
     (enrollmentsRaw || []).map(async (e) => {
-      const st = await getById("users", e.studentId); // ✅ camelCase
+      const studentId = e.studentId || e.student_id;
+      // CONSULTA DIRECTA PARA ASEGURAR QUE VENGA lastname
+      const [rows] = await pool.query(`SELECT id, name, lastname, email, student_code FROM users WHERE id = ?`, [studentId]);
+      const st = rows[0] || null;
+      
       return {
         id: e.id,
-        subjectId: e.subjectId,     // ✅ camelCase
-        studentId: e.studentId,     // ✅ camelCase
-        createdAt: e.createdAt,     // ✅ camelCase
+        subjectId: e.subjectId || e.subject_id,     
+        studentId: studentId,     
+        createdAt: e.createdAt || e.created_at,     
         student: st
           ? {
               id: st.id,
               name: st.name,
+              lastname: st.lastname || "", // Campo directo de la BD
               email: st.email,
-              studentCode: st.studentCode || "",
-              faceId: st.faceId || null,
-              faceDescriptor: st.faceDescriptor || null,
+              studentCode: st.student_code || "",
             }
           : null,
       };
@@ -373,19 +378,42 @@ profRouter.get("/subjects/:id/attendance", async (req, res) => {
 
   const enriched = await Promise.all(
     items.map(async (a) => {
-      const st = await getById("users", a.studentId);
+      const studentId = a.studentId || a.student_id;
+      const [rows] = await pool.query(`SELECT id, name, lastname, email, student_code FROM users WHERE id = ?`, [studentId]);
+      const st = rows[0] || null;
+
+      // Asegurar que el timestamp se envíe como string ISO para evitar problemas de zona horaria en el cliente
+      let finalTs = a.timestamp;
+      if (finalTs instanceof Date) {
+        // Convertir a ISO local (sin la Z al final para que el cliente lo tome como local)
+        const pad = (n) => String(n).padStart(2, "0");
+        finalTs = 
+          finalTs.getFullYear() + "-" +
+          pad(finalTs.getMonth() + 1) + "-" +
+          pad(finalTs.getDate()) + "T" +
+          pad(finalTs.getHours()) + ":" +
+          pad(finalTs.getMinutes()) + ":" +
+          pad(finalTs.getSeconds());
+      }
+
       return {
         id: a.id,
-        subjectId: a.subjectId,
-studentId: a.studentId,
-        timestamp: a.timestamp,
+        subjectId: a.subjectId || a.subject_id,
+        studentId: studentId,
+        timestamp: finalTs,
         method: a.method,
         status: a.status,
         approvalStatus: a.approval_status || a.approvalStatus,
         sessionKey: a.session_key || a.sessionKey,
-        createdAt: a.createdAt,
+        createdAt: a.createdAt || a.created_at,
         student: st
-          ? { id: st.id, name: st.name, email: st.email, studentCode: st.studentCode || st.student_code || "" }
+          ? { 
+              id: st.id, 
+              name: st.name, 
+              lastname: st.lastname || "", 
+              email: st.email, 
+              studentCode: st.student_code || "" 
+            }
           : null,
       };
     })
@@ -471,8 +499,10 @@ async function alreadyMarked(subjectId, studentId, sessionKey) {
 }
 
 profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
-  const { studentId, status } = req.body || {};
+  const { studentId, status, date, scheduleId, timestamp } = req.body || {};
   if (!studentId) return res.status(400).json({ error: "studentId requerido" });
+  if (!scheduleId) return res.status(400).json({ error: "scheduleId requerido" });
+  if (!date) return res.status(400).json({ error: "date requerido" });
 
   const check = await ensureSubjectOwner(req.params.id, req.user.id);
   if (check.error) return res.status(check.status).json({ error: check.error });
@@ -482,49 +512,83 @@ profRouter.post("/subjects/:id/attendance/manual", async (req, res) => {
   if (!student || role !== "student") return res.status(404).json({ error: "Estudiante no encontrado" });
 
   const subjectId = req.params.id;
-  const nowISO = new Date().toISOString();
+  
+  // Buscar el horario específico
+  const sc = await getById("schedules", scheduleId);
+  if (!sc || String(sc.subject_id || sc.subjectId) !== String(subjectId)) {
+    return res.status(404).json({ error: "Horario no encontrado para esta materia" });
+  }
 
-  // ✅ MISMA sesión que usa SCAN (misma lógica)
-  const ses = await buildSessionForNow(subjectId, nowISO);
-  if (!ses) {
-    return res.status(202).json({ ok: true, message: "No hay clase en curso para esta materia." });
+  const schedule = {
+    dayOfWeek: sc.day_of_week ?? sc.dayOfWeek,
+    startTime: sc.start_time ?? sc.startTime,
+    endTime: sc.end_time ?? sc.endTime,
+  };
+
+  // Construir sessionKey
+  const sessionKey = `${subjectId}|${date}|${schedule.dayOfWeek}|${schedule.startTime}-${schedule.endTime}`;
+
+  // Usar el timestamp exacto enviado por el frontend, o caer en el inicio de la clase
+  // Forzamos el formato YYYY-MM-DD HH:mm:ss
+  let finalTimestamp = timestamp;
+  if (!finalTimestamp || typeof finalTimestamp !== 'string') {
+    finalTimestamp = `${date} ${schedule.startTime}:00`;
+  } else {
+    // Si viene en formato ISO (con T), lo convertimos a espacio
+    finalTimestamp = finalTimestamp.replace('T', ' ').split('.')[0];
+    // Si solo viene la hora, le pegamos la fecha
+    if (!finalTimestamp.includes('-')) {
+      finalTimestamp = `${date} ${finalTimestamp}`;
+    }
+    // Asegurar que tenga segundos
+    if (finalTimestamp.split(':').length === 2) {
+      finalTimestamp += ":00";
+    }
   }
 
   // ✅ Bloqueo real (manual también)
-  const exists = await alreadyMarked(subjectId, studentId, ses.sessionKey);
+  const exists = await alreadyMarked(subjectId, studentId, sessionKey);
+  
+  const attendanceData = {
+    subjectId: subjectId,
+    studentId: studentId,
+    timestamp: finalTimestamp,
+    method: "manual",
+    status: "present",
+    approvalStatus: "approved",
+    sessionKey: sessionKey,
+    createdAt: new Date().toLocaleString('sv-SE')
+  };
+
+  const attendanceId = `${studentId}_${sessionKey}`.replace(/[|:\s]/g, "_");
+
   if (exists) {
+    // Si ya existe, actualizamos el registro con la nueva hora y datos
+    await upsert("attendance", attendanceId, attendanceData);
+
     return res.json({
       ok: true,
-      alreadyMarked: true,
-      message: "El estudiante ya fue registrado en esta clase.",
+      message: "Asistencia actualizada correctamente con la nueva hora.",
       student: { id: student.id, name: student.name, email: student.email },
     });
   }
 
-  const attendanceId = `${studentId}_${ses.sessionKey}`.replace(/[|:\s]/g, "_");
-
-  await upsert("attendance", attendanceId, {
-    subject_id: subjectId,
-    student_id: studentId,
-    timestamp: nowISO,
-    method: "manual",
-    status: status || ses.status || "present",
-    approval_status: "approved",
-    session_key: ses.sessionKey,          // ✅ clave
-    created_at: nowISO,
-  });
+  await upsert("attendance", attendanceId, attendanceData);
 
   // subjectName desde MySQL
   const subject = await getById("subjects", subjectId);
   const subjectName = subject?.name || "";
 
+  // Usar la fecha y hora seleccionada para el correo también
+  const emailTimestamp = finalTimestamp.includes(' ') ? finalTimestamp.replace(' ', 'T') : finalTimestamp;
+
   try {
     await sendAttendanceEmail({
       to: student.email,
-      studentName: student.name,
+      studentName: `${student.name} ${student.lastname || student.lastName || student.last_name || ""}`,
       subjectName,
-      status: status || ses.status || "present",
-      timestampISO: nowISO,
+      status: "present",
+      timestampISO: emailTimestamp,
     });
   } catch (error) {
     console.error("❌ Error enviando correo (manual):", error);
@@ -606,30 +670,33 @@ profRouter.post("/subjects/:id/attendance/scan", async (req, res) => {
   }
 
   const attendanceId = `${st.id}_${sessionKey}`.replace(/[|:\s]/g, "_");
-  const nowISO = new Date().toISOString();
+  const nowLocal = new Date().toLocaleString('sv-SE');
 
   await upsert("attendance", attendanceId, {
-    subject_id: subjectId,
-    student_id: st.id,
+    subjectId: subjectId,
+    studentId: st.id,
     timestamp: ts,
     method: "prof_device",
     status,
-    approval_status: "approved",
-    session_key: sessionKey,
-    created_at: nowISO,
+    approvalStatus: "approved",
+    sessionKey: sessionKey,
+    createdAt: nowLocal,
   });
 
   // subjectName desde MySQL
   const subject = await getById("subjects", subjectId);
   const subjectName = subject?.name || "";
 
+  // Convertir ts (ISO) a formato amigable para el correo si es necesario
+  const emailTs = ts.includes('Z') ? ts : ts.replace(' ', 'T');
+
   try {
     await sendAttendanceEmail({
       to: st.email,
-      studentName: st.name,
+      studentName: `${st.name} ${st.lastname || st.lastName || st.last_name || ""}`,
       subjectName,
       status,
-      timestampISO: nowISO,
+      timestampISO: emailTs,
     });
   } catch (error) {
     console.error("❌ Error enviando correo (scan):", error);
@@ -729,7 +796,7 @@ profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
     if (a) {
       ws.addRow({
         studentCode: st?.studentCode || st?.student_code || "",
-        student: st?.name || "N/A",
+        student: `${st?.name || "N/A"} ${st?.lastname || st?.lastName || st?.last_name || ""}`,
         email: st?.email || "N/A",
         timestamp: a.timestamp,
         status: a.status === "present" ? "Presente" : a.status === "late" ? "Tarde" : a.status,
@@ -740,7 +807,7 @@ profRouter.get("/subjects/:id/attendance/export", async (req, res) => {
       // ❌ No existe registro => Falta
       ws.addRow({
         studentCode: st?.studentCode || st?.student_code || "",
-        student: st?.name || "N/A",
+        student: `${st?.name || "N/A"} ${st?.lastname || st?.lastName || st?.last_name || ""}`,
         email: st?.email || "N/A",
         timestamp: "-",
         status: "Falta",
@@ -859,6 +926,8 @@ const toDate = new Date(`${to}T23:59:59`);
       result.push({
         studentId,
         name: student?.name || "N/A",
+        lastname: student?.lastname || student?.lastName || student?.last_name || "",
+        fullName: `${student?.name || "N/A"} ${student?.lastname || student?.lastName || student?.last_name || ""}`.trim(),
         total: totalClasses,
         attended: attendedSessions,
         percent

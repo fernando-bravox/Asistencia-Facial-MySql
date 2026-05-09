@@ -1,24 +1,28 @@
+// server/src/routes/admin.js
 import { Router } from "express";
 import { nanoid } from "nanoid";
 import { spawn } from "child_process";
-
-import { hashPassword } from "../utils/auth.js";
-import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { listAll, findOne, getById, upsert, remove } from "../utils/mysqlDb.js"
-;
+import { hashPassword } from "../utils/auth.js";
+import { requireAuth, requireRole } from "../middleware/requireAuth.js";
+import { listAll, findOne, getById, upsert, remove } from "../utils/mysqlDb.js";
 
 export const adminRouter = Router();
+
 adminRouter.use(requireAuth(), requireRole("admin"));
+
 // =========================
-// ✅ STREAM TAPO (RTSP -> MJPEG) para ADMIN (registro de rostros)
+// STREAM TAPO (RTSP -> MJPEG) para ADMIN
 // =========================
 adminRouter.get("/camera/stream", async (_req, res) => {
   const rtsp = process.env.TAPO_RTSP_URL;
-  if (!rtsp) return res.status(500).json({ error: "Falta TAPO_RTSP_URL en .env" });
+
+  if (!rtsp) {
+    return res.status(500).json({ error: "Falta TAPO_RTSP_URL en .env" });
+  }
 
   res.writeHead(200, {
     "Content-Type": "multipart/x-mixed-replace; boundary=ffmpeg",
@@ -43,7 +47,9 @@ adminRouter.get("/camera/stream", async (_req, res) => {
   ff.stdout.pipe(res);
 
   const kill = () => {
-    try { ff.kill("SIGKILL"); } catch (_e) {}
+    try {
+      ff.kill("SIGKILL");
+    } catch (_e) {}
   };
 
   res.on("close", kill);
@@ -56,7 +62,9 @@ const __dirname = path.dirname(__filename);
 const facesDir = path.join(__dirname, "..", "..", "data", "faces");
 
 function ensureFacesDir() {
-  if (!fs.existsSync(facesDir)) fs.mkdirSync(facesDir, { recursive: true });
+  if (!fs.existsSync(facesDir)) {
+    fs.mkdirSync(facesDir, { recursive: true });
+  }
 }
 
 function sanitizeFaceId(faceId) {
@@ -70,34 +78,56 @@ function sanitizeFaceDescriptor(faceDescriptor) {
   if (!Array.isArray(faceDescriptor)) return null;
   if (faceDescriptor.length !== 128) return null;
 
-  const cleaned = faceDescriptor.map(n => Number(n));
-  if (cleaned.some(n => Number.isNaN(n) || !Number.isFinite(n))) return null;
+  const cleaned = faceDescriptor.map((n) => Number(n));
+
+  if (cleaned.some((n) => Number.isNaN(n) || !Number.isFinite(n))) {
+    return null;
+  }
+
   return cleaned;
 }
+
 function euclideanDistance(a, b) {
   let sum = 0;
+
   for (let i = 0; i < a.length; i++) {
     const d = a[i] - b[i];
     sum += d * d;
   }
+
   return Math.sqrt(sum);
 }
 
 function parseDescriptorMaybe(value) {
   if (!value) return null;
+
   if (typeof value === "string") {
-    try { value = JSON.parse(value); } catch { return null; }
+    try {
+      value = JSON.parse(value);
+    } catch (_e) {
+      return null;
+    }
   }
+
   if (!Array.isArray(value) || value.length !== 128) return null;
+
   const cleaned = value.map(Number);
-  if (cleaned.some(n => Number.isNaN(n) || !Number.isFinite(n))) return null;
+
+  if (cleaned.some((n) => Number.isNaN(n) || !Number.isFinite(n))) {
+    return null;
+  }
+
   return cleaned;
 }
 
 async function findDuplicateFaceDescriptor(incomingDescriptor, excludeUserId) {
-  const users = await listAll("users"); // ya te devuelve faceDescriptor
+  const users = await listAll("users");
 
-  let best = { userId: null, distance: Infinity };
+  let best = {
+    userId: null,
+    distance: Infinity,
+  };
+
   for (const u of users) {
     if (!u?.id || u.id === excludeUserId) continue;
 
@@ -105,8 +135,15 @@ async function findDuplicateFaceDescriptor(incomingDescriptor, excludeUserId) {
     if (!existing) continue;
 
     const dist = euclideanDistance(incomingDescriptor, existing);
-    if (dist < best.distance) best = { userId: u.id, distance: dist };
+
+    if (dist < best.distance) {
+      best = {
+        userId: u.id,
+        distance: dist,
+      };
+    }
   }
+
   return best;
 }
 
@@ -115,233 +152,402 @@ function sanitizeStudentCode(studentCode) {
 
   const c = String(studentCode).trim();
 
-  // ✅ solo 4 dígitos exactos
+  // Solo 4 dígitos exactos
   if (!/^\d{4}$/.test(c)) return null;
 
-  return c; // se guarda como "0123" si aplica
+  return c;
 }
 
-
 // ============================
-// GET USERS ( MySql )
+// GET USERS (MySQL)
 // ============================
 adminRouter.get("/users", async (_req, res) => {
-  const users = await listAll("users");
+  try {
+    const users = await listAll("users");
 
-  res.json({
-    users: users.map(u => ({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      role: u.role,
-      studentCode: u.studentCode || null, // ✅ agregado
-      faceId: u.faceId || null,
-      faceDescriptor: u.faceDescriptor || null,
-      createdAt: u.createdAt || null,
-    })),
-  });
+    res.json({
+      users: users.map((u) => {
+        const lastname = u.lastname || u.lastName || u.last_name || "";
+
+        return {
+          id: u.id,
+          name: u.name || "",
+          lastname,
+          fullName: `${u.name || ""} ${lastname}`.trim(),
+          email: u.email || "",
+          role: u.role || "",
+          studentCode: u.studentCode || null,
+          faceId: u.faceId || null,
+          faceDescriptor: u.faceDescriptor || null,
+          createdAt: u.createdAt || null,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("Error al listar usuarios:", error);
+    res.status(500).json({ error: "Error al listar usuarios" });
+  }
 });
 
 // ============================
-// GENERAR FACEID ÚNICO (Firestore)
+// GENERAR FACEID ÚNICO
 // ============================
 adminRouter.post("/faceid", async (_req, res) => {
-  let faceId = "";
-  for (let i = 0; i < 10; i++) {
-    faceId = `face-${nanoid(10)}`;
-    const exists = await findOne("users", "faceId", faceId);
-    if (!exists) break;
+  try {
+    let faceId = "";
+
+    for (let i = 0; i < 10; i++) {
+      faceId = `face-${nanoid(10)}`;
+
+      const exists = await findOne("users", "faceId", faceId);
+
+      if (!exists) break;
+    }
+
+    res.json({ faceId });
+  } catch (error) {
+    console.error("Error al generar faceId:", error);
+    res.status(500).json({ error: "Error al generar faceId" });
   }
-  res.json({ faceId });
 });
 
 // ============================
-// GUARDAR FOTO CAPTURADA (BASE64) - LOCAL (por ahora)
+// GUARDAR FOTO CAPTURADA BASE64
 // ============================
 adminRouter.post("/faces", async (req, res) => {
-  const { faceId: rawFaceId, imageDataUrl } = req.body || {};
-  const faceId = sanitizeFaceId(rawFaceId);
+  try {
+    const { faceId: rawFaceId, imageDataUrl } = req.body || {};
+    const faceId = sanitizeFaceId(rawFaceId);
 
-  if (!faceId) return res.status(400).json({ error: "faceId inválido" });
-  if (!imageDataUrl || typeof imageDataUrl !== "string") {
-    return res.status(400).json({ error: "Falta imageDataUrl" });
-  }
+    if (!faceId) {
+      return res.status(400).json({ error: "faceId inválido" });
+    }
 
-  const m = imageDataUrl.match(/^data:image\/(jpeg|jpg|png);base64,(.+)$/i);
-  if (!m) return res.status(400).json({ error: "Formato no soportado (usa JPEG/PNG base64)" });
+    if (!imageDataUrl || typeof imageDataUrl !== "string") {
+      return res.status(400).json({ error: "Falta imageDataUrl" });
+    }
 
-  const ext = m[1].toLowerCase() === "png" ? "png" : "jpg";
-  const b64 = m[2];
+    const m = imageDataUrl.match(/^data:image\/(jpeg|jpg|png);base64,(.+)$/i);
 
-  if (b64.length > 2_500_000) return res.status(413).json({ error: "Imagen muy grande" });
-
-  ensureFacesDir();
-  const filePath = path.join(facesDir, `${faceId}.${ext}`);
-  fs.writeFileSync(filePath, Buffer.from(b64, "base64"));
-
-  res.json({ ok: true, savedAs: `${faceId}.${ext}` });
-});
-
-// ============================
-// CREATE USER ( MySql )
-// ============================
-adminRouter.post("/users", async (req, res) => {
-  const { name, email, password, role, faceId, faceDescriptor, studentCode } = req.body || {};
-
-  if (!name || !email || !password || !role) return res.status(400).json({ error: "Faltan campos" });
-  if (!["admin", "professor", "student"].includes(role)) return res.status(400).json({ error: "Rol inválido" });
-
-  const cleanEmail = String(email).trim().toLowerCase();
-
-  const exists = await findOne("users", "email", cleanEmail);
-  if (exists) return res.status(409).json({ error: "Este correo ya existe" });
-
-  const passwordHash = await hashPassword(password);
-
-  const cleanedFaceId = faceId ? sanitizeFaceId(faceId) : null;
-  const cleanedDescriptor = sanitizeFaceDescriptor(faceDescriptor);
-const descriptorJson = cleanedDescriptor ? JSON.stringify(cleanedDescriptor) : null;
-  const cleanedStudentCode = sanitizeStudentCode(studentCode); // ✅ agregado
-if (role === "student" && !cleanedStudentCode) {
-  return res.status(400).json({ error: "El código del estudiante debe tener exactamente 4 números" });
-
-}
-
-  // 🚫 Bloquear rostro duplicado (solo si viene descriptor)
-if (role === "student" && cleanedDescriptor) {
-  const THRESHOLD = 0.50; // 0.45 más estricto | 0.55 más permisivo
-  const dup = await findDuplicateFaceDescriptor(cleanedDescriptor, null);
-
-  if (dup.userId && dup.distance < THRESHOLD) {
-    return res.status(409).json({
-      error: "Este rostro ya está registrado en otro usuario",
-      matchUserId: dup.userId,
-      distance: dup.distance,
-    });
-  }
-}
-
-  const id = nanoid();
-
-const user = {
-  name,
-  email: cleanEmail,
-  passwordHash,
-  role,
-
-  // ✅ GUARDAR CÓDIGO SOLO SI ES ESTUDIANTE (o si te lo mandan)
-  studentCode: role === "student" ? (cleanedStudentCode || "") : "",
-
-
-  faceId: cleanedFaceId || null,
-  faceDescriptor: descriptorJson,
-  createdAt: new Date().toISOString(),
-};
- 
-
-  await upsert("users", id, user);
-
-  res.status(201).json({
-    user: {
-      id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      studentCode: user.studentCode || null, // ✅
-      faceId: user.faceId
-    },
-  });
-});
-
-// ============================
-// UPDATE USER (Firestore)
-// ============================
-adminRouter.put("/users/:id", async (req, res) => {
-  const { id } = req.params;
-const { name, role, faceId, password, faceDescriptor, studentCode } = req.body || {};
-
-  const user = await getById("users", id);
-  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
-
-  const patch = {};
-
-  if (name) patch.name = name;
-
-  if (role) {
-    if (!["admin", "professor", "student"].includes(role)) return res.status(400).json({ error: "Rol inválido" });
-    patch.role = role;
-  }
-
-  if (typeof studentCode !== "undefined") {
-  const cleaned = sanitizeStudentCode(studentCode);
-
-  if (!cleaned) {
-    return res.status(400).json({ error: "El código del estudiante debe tener exactamente 4 números" });
-  }
-
-  const exists = await findOne("users", "studentCode", cleaned);
-  if (exists && exists.id !== id) {
-    return res.status(409).json({ error: "Ese código de estudiante ya está registrado" });
-  }
-
-  patch.studentCode = cleaned;
-}
-
-
-  if (typeof faceId !== "undefined") patch.faceId = faceId ? sanitizeFaceId(faceId) : null;
-
-  if (typeof faceDescriptor !== "undefined") {
-  const cleaned = sanitizeFaceDescriptor(faceDescriptor);
-
-  // 🚫 Bloquear rostro duplicado (cuando se actualiza/registrar rostro)
-  if (cleaned) {
-    const THRESHOLD = 0.50;
-    const dup = await findDuplicateFaceDescriptor(cleaned, id);
-
-    if (dup.userId && dup.distance < THRESHOLD) {
-      return res.status(409).json({
-        error: "Este rostro ya está registrado en otro usuario",
-        matchUserId: dup.userId,
-        distance: dup.distance,
+    if (!m) {
+      return res.status(400).json({
+        error: "Formato no soportado. Usa JPEG o PNG en base64",
       });
     }
+
+    const ext = m[1].toLowerCase() === "png" ? "png" : "jpg";
+    const b64 = m[2];
+
+    if (b64.length > 2_500_000) {
+      return res.status(413).json({ error: "Imagen muy grande" });
+    }
+
+    ensureFacesDir();
+
+    const filePath = path.join(facesDir, `${faceId}.${ext}`);
+
+    fs.writeFileSync(filePath, Buffer.from(b64, "base64"));
+
+    res.json({
+      ok: true,
+      savedAs: `${faceId}.${ext}`,
+    });
+  } catch (error) {
+    console.error("Error al guardar rostro:", error);
+    res.status(500).json({ error: "Error al guardar rostro" });
   }
-
-  patch.faceDescriptor = cleaned ? JSON.stringify(cleaned) : null;
-}
-
-
-
-  if (password) patch.passwordHash = await hashPassword(password);
-
-
-  await upsert("users", id, { ...user, ...patch });
-
-  res.json({ ok: true });
 });
 
 // ============================
-// DELETE USER (Firestore)
+// CREATE USER (MySQL)
+// ============================
+adminRouter.post("/users", async (req, res) => {
+  try {
+    const {
+      name,
+      lastname,
+      email,
+      password,
+      role,
+      faceId,
+      faceDescriptor,
+      studentCode,
+    } = req.body || {};
+
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ error: "Faltan campos" });
+    }
+
+    if (!["admin", "professor", "student"].includes(role)) {
+      return res.status(400).json({ error: "Rol inválido" });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanLastname = String(lastname || "").trim();
+
+    const exists = await findOne("users", "email", cleanEmail);
+
+    if (exists) {
+      return res.status(409).json({ error: "Este correo ya existe" });
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const cleanedFaceId = faceId ? sanitizeFaceId(faceId) : null;
+    const cleanedDescriptor = sanitizeFaceDescriptor(faceDescriptor);
+    const descriptorJson = cleanedDescriptor ? JSON.stringify(cleanedDescriptor) : null;
+
+    // Validar código solo si el rol es estudiante
+    const cleanedStudentCode =
+      role === "student" ? sanitizeStudentCode(studentCode) : null;
+
+    if (role === "student" && !cleanedStudentCode) {
+      return res.status(400).json({
+        error: "El código del estudiante debe tener exactamente 4 números",
+      });
+    }
+
+    if (role === "student" && cleanedStudentCode) {
+      const existsCode = await findOne("users", "studentCode", cleanedStudentCode);
+
+      if (existsCode) {
+        return res.status(409).json({
+          error: "Ese código de estudiante ya está registrado",
+        });
+      }
+    }
+
+    // Bloquear rostro duplicado solo si viene descriptor
+    if (role === "student" && cleanedDescriptor) {
+      const THRESHOLD = 0.5;
+      const dup = await findDuplicateFaceDescriptor(cleanedDescriptor, null);
+
+      if (dup.userId && dup.distance < THRESHOLD) {
+        return res.status(409).json({
+          error: "Este rostro ya está registrado en otro usuario",
+          matchUserId: dup.userId,
+          distance: dup.distance,
+        });
+      }
+    }
+
+    const id = nanoid();
+
+    const user = {
+      name: String(name).trim(),
+      lastname: cleanLastname,
+      email: cleanEmail,
+      passwordHash,
+      role,
+      studentCode: role === "student" ? cleanedStudentCode : null,
+      faceId: cleanedFaceId || null,
+      faceDescriptor: descriptorJson,
+      createdAt: new Date().toISOString(),
+    };
+
+    await upsert("users", id, user);
+
+    res.status(201).json({
+      user: {
+        id,
+        name: user.name,
+        lastname: user.lastname,
+        fullName: `${user.name || ""} ${user.lastname || ""}`.trim(),
+        email: user.email,
+        role: user.role,
+        studentCode: user.studentCode || null,
+        faceId: user.faceId || null,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Error al crear usuario:", error);
+    res.status(500).json({ error: "Error al crear usuario" });
+  }
+});
+
+// ============================
+// UPDATE USER (MySQL)
+// ============================
+adminRouter.put("/users/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      name,
+      lastname,
+      lastName,
+      last_name,
+      role,
+      faceId,
+      password,
+      faceDescriptor,
+      studentCode,
+    } = req.body || {};
+
+    const user = await getById("users", id);
+
+    if (!user) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    console.log("📝 [ADMIN] Body recibido para actualizar usuario:", req.body);
+
+    const patch = {};
+
+    if (typeof name !== "undefined") {
+      const cleanName = String(name || "").trim();
+
+      if (!cleanName) {
+        return res.status(400).json({ error: "El nombre no puede estar vacío" });
+      }
+
+      patch.name = cleanName;
+    }
+
+    // ✅ Acepta lastname, lastName o last_name
+    if (
+      typeof lastname !== "undefined" ||
+      typeof lastName !== "undefined" ||
+      typeof last_name !== "undefined"
+    ) {
+      const cleanLastname = String(
+        lastname ?? lastName ?? last_name ?? ""
+      ).trim();
+
+      patch.lastname = cleanLastname;
+    }
+
+    if (role) {
+      if (!["admin", "professor", "student"].includes(role)) {
+        return res.status(400).json({ error: "Rol inválido" });
+      }
+
+      patch.role = role;
+    }
+
+    // Rol final después de la actualización
+    const finalRole = patch.role || user.role;
+
+    // Código de estudiante solo aplica para estudiantes
+    if (finalRole === "student") {
+      if (typeof studentCode !== "undefined" && studentCode !== null) {
+        const cleaned = sanitizeStudentCode(studentCode);
+
+        if (!cleaned) {
+          return res.status(400).json({
+            error: "El código del estudiante debe tener exactamente 4 números",
+          });
+        }
+
+        const exists = await findOne("users", "studentCode", cleaned);
+
+        if (exists && exists.id !== id) {
+          return res.status(409).json({
+            error: "Ese código de estudiante ya está registrado",
+          });
+        }
+
+        patch.studentCode = cleaned;
+      }
+    } else {
+      // Si no es estudiante, se limpia el código para evitar conflictos
+      patch.studentCode = null;
+    }
+
+    if (typeof faceId !== "undefined") {
+      patch.faceId = faceId ? sanitizeFaceId(faceId) : null;
+    }
+
+    if (typeof faceDescriptor !== "undefined") {
+      const cleaned = sanitizeFaceDescriptor(faceDescriptor);
+
+      // Bloquear rostro duplicado cuando se actualiza o registra rostro
+      if (cleaned) {
+        const THRESHOLD = 0.5;
+        const dup = await findDuplicateFaceDescriptor(cleaned, id);
+
+        if (dup.userId && dup.distance < THRESHOLD) {
+          return res.status(409).json({
+            error: "Este rostro ya está registrado en otro usuario",
+            matchUserId: dup.userId,
+            distance: dup.distance,
+          });
+        }
+      }
+
+      patch.faceDescriptor = cleaned ? JSON.stringify(cleaned) : null;
+    }
+
+    if (password) {
+      patch.passwordHash = await hashPassword(password);
+    }
+
+    console.log("✅ [ADMIN] Patch final para guardar:", patch);
+
+    await upsert("users", id, patch);
+
+    // ✅ Volvemos a leer desde MySQL para confirmar lo guardado realmente
+    const updatedUser = await getById("users", id);
+
+    const updatedLastname =
+      updatedUser.lastname || updatedUser.lastName || updatedUser.last_name || "";
+
+    res.json({
+      ok: true,
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name || "",
+        lastname: updatedLastname,
+        lastName: updatedLastname,
+        last_name: updatedLastname,
+        fullName: `${updatedUser.name || ""} ${updatedLastname}`.trim(),
+        email: updatedUser.email || "",
+        role: updatedUser.role || "",
+        studentCode: updatedUser.studentCode || null,
+        faceId: updatedUser.faceId || null,
+        faceDescriptor: updatedUser.faceDescriptor || null,
+        createdAt: updatedUser.createdAt || null,
+      },
+    });
+  } catch (error) {
+    console.error("Error al actualizar usuario:", error);
+    res.status(500).json({ error: "Error al actualizar usuario" });
+  }
+});
+
+// ============================
+// DELETE USER (MySQL)
 // ============================
 adminRouter.delete("/users/:id", async (req, res) => {
-  const { id } = req.params;
-
-  const user = await getById("users", id);
-  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
-
-  await remove("users", id);
-
-  // Opcional: borrar foto local si existe
   try {
-    if (user?.faceId) {
-      ensureFacesDir();
-      const fid = sanitizeFaceId(user.faceId);
-      const jpg = path.join(facesDir, `${fid}.jpg`);
-      const png = path.join(facesDir, `${fid}.png`);
-      if (fs.existsSync(jpg)) fs.unlinkSync(jpg);
-      if (fs.existsSync(png)) fs.unlinkSync(png);
-    }
-  } catch (_e) {}
+    const { id } = req.params;
 
-  res.json({ ok: true });
+    const user = await getById("users", id);
+
+    if (!user) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    await remove("users", id);
+
+    // Opcional: borrar foto local si existe
+    try {
+      if (user?.faceId) {
+        ensureFacesDir();
+
+        const fid = sanitizeFaceId(user.faceId);
+        const jpg = path.join(facesDir, `${fid}.jpg`);
+        const png = path.join(facesDir, `${fid}.png`);
+
+        if (fs.existsSync(jpg)) fs.unlinkSync(jpg);
+        if (fs.existsSync(png)) fs.unlinkSync(png);
+      }
+    } catch (_e) {}
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Error al eliminar usuario:", error);
+    res.status(500).json({ error: "Error al eliminar usuario" });
+  }
 });

@@ -167,10 +167,10 @@ async function takeAndStore({ subjectId, sessionKey, shotType, takenAt }) {
       String(subjectId),
       String(sessionKey),
       String(shotType),
-      takenAt.toSQL({ includeOffset: false }),
+      takenAt.setZone(TZ).toSQL({ includeOffset: false }), // ✅ Asegurar zona horaria
       fileName,
       outPath,
-      expiresAt.toSQL({ includeOffset: false }),
+      expiresAt.setZone(TZ).toSQL({ includeOffset: false }), // ✅ Asegurar zona horaria
       DateTime.now().setZone(TZ).toSQL({ includeOffset: false }),
     ]
   );
