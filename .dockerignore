@@ -1,5 +1,11 @@
 node_modules
-client/node_modules
-server/node_modules
 .git
 npm-debug.log
+
+*.sql
+*.zip
+*.rar
+*.tar
+*.tar.gz
+*.7z
+

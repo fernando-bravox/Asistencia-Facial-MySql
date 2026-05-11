@@ -1,4 +1,4 @@
-// server/src/evidence.js
+// server/src/routes/evidence.js
 import express from "express";
 import { pool } from "../utils/mysqlPool.js";
 import { requireAuth } from "../middleware/requireAuth.js";
@@ -15,17 +15,14 @@ function labelShotType(type) {
 function getApiPrefix(req) {
   const originalUrl = req.originalUrl || "";
 
-  // Si tu app está entrando por /backend/api
   if (originalUrl.includes("/backend/api/")) {
     return "/backend/api";
   }
 
-  // Si tu app está entrando directamente por /api
   if (originalUrl.includes("/api/")) {
     return "/api";
   }
 
-  // Respaldo
   return "/api";
 }
 
@@ -56,11 +53,9 @@ function mapEvidenceRow(req, r) {
     fileName: r.file_name,
     expired: r.expires_at ? new Date(r.expires_at) < new Date() : false,
 
-    // Dejo los dos nombres por compatibilidad con tu frontend
     imageUrl,
     viewUrl: imageUrl,
 
-    // También dejo estos nombres por si alguna pantalla usa snake_case
     shot_type: r.shot_type,
     taken_at: r.taken_at,
     file_name: r.file_name,
@@ -70,14 +65,13 @@ function mapEvidenceRow(req, r) {
 
 // =====================================================
 // TODAS LAS EVIDENCIAS DE UNA MATERIA
-// Ruta principal que ya usabas en tu proyecto
+// Solo Inicio de clase y Fin de gracia
 // =====================================================
 evidenceRouter.get(
   "/prof/subjects/:subjectId/evidence-all",
   requireAuth(),
   async (req, res) => {
     try {
-      // Tu subject_id es texto tipo subJAz..., no número
       const subjectId = String(req.params.subjectId || "").trim();
 
       if (!subjectId) {
@@ -99,6 +93,7 @@ evidenceRouter.get(
           created_at
         FROM attendance_evidence
         WHERE subject_id = ?
+          AND shot_type IN ('EARLY_5', 'GRACE_END')
         ORDER BY COALESCE(taken_at, created_at) DESC, id DESC`,
         [subjectId]
       );
@@ -123,7 +118,8 @@ evidenceRouter.get(
 
 // =====================================================
 // TODAS LAS EVIDENCIAS DE UNA MATERIA
-// Ruta adicional compatible con el archivo de tu amigo
+// Ruta que usa tu ProfSubjectDetail
+// Solo Inicio de clase y Fin de gracia
 // =====================================================
 evidenceRouter.get(
   "/prof/subjects/:subjectId/evidence",
@@ -151,6 +147,7 @@ evidenceRouter.get(
           created_at
         FROM attendance_evidence
         WHERE subject_id = ?
+          AND shot_type IN ('EARLY_5', 'GRACE_END')
         ORDER BY COALESCE(taken_at, created_at) DESC, id DESC`,
         [subjectId]
       );
@@ -175,13 +172,13 @@ evidenceRouter.get(
 
 // =====================================================
 // EVIDENCIAS DE UNA SESIÓN ESPECÍFICA
+// Solo Inicio de clase y Fin de gracia
 // =====================================================
 evidenceRouter.get(
   "/prof/subjects/:subjectId/sessions/:sessionId/evidence",
   requireAuth(),
   async (req, res) => {
     try {
-      // Se manejan como texto porque tus IDs no siempre son numéricos
       const subjectId = String(req.params.subjectId || "").trim();
       const sessionId = String(req.params.sessionId || "").trim();
 
@@ -203,7 +200,9 @@ evidenceRouter.get(
           expires_at,
           created_at
         FROM attendance_evidence
-        WHERE subject_id = ? AND session_id = ?
+        WHERE subject_id = ?
+          AND session_id = ?
+          AND shot_type IN ('EARLY_5', 'GRACE_END')
         ORDER BY COALESCE(taken_at, created_at) ASC, id ASC`,
         [subjectId, sessionId]
       );
