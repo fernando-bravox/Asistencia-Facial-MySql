@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { hashPassword } from "../utils/auth.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { listAll, findOne, getById, upsert, remove } from "../utils/mysqlDb.js";
+import { pool } from "../utils/mysqlPool.js";
 
 export const adminRouter = Router();
 
@@ -34,11 +35,16 @@ adminRouter.get("/camera/stream", async (_req, res) => {
   const ff = spawn(
     "ffmpeg",
     [
-      "-rtsp_transport", "tcp",
-      "-i", rtsp,
-      "-vf", "fps=6,scale=1280:-1",
-      "-f", "mpjpeg",
-      "-q:v", "6",
+      "-rtsp_transport",
+      "tcp",
+      "-i",
+      rtsp,
+      "-vf",
+      "fps=6,scale=1280:-1",
+      "-f",
+      "mpjpeg",
+      "-q:v",
+      "6",
       "pipe:1",
     ],
     { stdio: ["ignore", "pipe", "ignore"] }
@@ -131,7 +137,7 @@ async function findDuplicateFaceDescriptor(incomingDescriptor, excludeUserId) {
   for (const u of users) {
     if (!u?.id || u.id === excludeUserId) continue;
 
-    const existing = parseDescriptorMaybe(u.faceDescriptor);
+    const existing = parseDescriptorMaybe(u.faceDescriptor || u.face_descriptor);
     if (!existing) continue;
 
     const dist = euclideanDistance(incomingDescriptor, existing);
@@ -152,10 +158,32 @@ function sanitizeStudentCode(studentCode) {
 
   const c = String(studentCode).trim();
 
-  // Solo 4 dígitos exactos
   if (!/^\d{4}$/.test(c)) return null;
 
   return c;
+}
+
+function normalizeUserForResponse(u) {
+  const lastname = u?.lastname || u?.lastName || u?.last_name || "";
+  const studentCode = u?.studentCode || u?.student_code || null;
+  const faceId = u?.faceId || u?.face_id || null;
+  const faceDescriptor = u?.faceDescriptor || u?.face_descriptor || null;
+  const createdAt = u?.createdAt || u?.created_at || null;
+
+  return {
+    id: u?.id,
+    name: u?.name || "",
+    lastname,
+    lastName: lastname,
+    last_name: lastname,
+    fullName: `${u?.name || ""} ${lastname}`.trim(),
+    email: u?.email || "",
+    role: u?.role || "",
+    studentCode,
+    faceId,
+    faceDescriptor,
+    createdAt,
+  };
 }
 
 // ============================
@@ -166,22 +194,7 @@ adminRouter.get("/users", async (_req, res) => {
     const users = await listAll("users");
 
     res.json({
-      users: users.map((u) => {
-        const lastname = u.lastname || u.lastName || u.last_name || "";
-
-        return {
-          id: u.id,
-          name: u.name || "",
-          lastname,
-          fullName: `${u.name || ""} ${lastname}`.trim(),
-          email: u.email || "",
-          role: u.role || "",
-          studentCode: u.studentCode || null,
-          faceId: u.faceId || null,
-          faceDescriptor: u.faceDescriptor || null,
-          createdAt: u.createdAt || null,
-        };
-      }),
+      users: users.map((u) => normalizeUserForResponse(u)),
     });
   } catch (error) {
     console.error("Error al listar usuarios:", error);
@@ -198,7 +211,6 @@ adminRouter.post("/faceid", async (_req, res) => {
 
     for (let i = 0; i < 10; i++) {
       faceId = `face-${nanoid(10)}`;
-
       const exists = await findOne("users", "faceId", faceId);
 
       if (!exists) break;
@@ -245,7 +257,6 @@ adminRouter.post("/faces", async (req, res) => {
     ensureFacesDir();
 
     const filePath = path.join(facesDir, `${faceId}.${ext}`);
-
     fs.writeFileSync(filePath, Buffer.from(b64, "base64"));
 
     res.json({
@@ -266,6 +277,8 @@ adminRouter.post("/users", async (req, res) => {
     const {
       name,
       lastname,
+      lastName,
+      last_name,
       email,
       password,
       role,
@@ -282,8 +295,13 @@ adminRouter.post("/users", async (req, res) => {
       return res.status(400).json({ error: "Rol inválido" });
     }
 
-    const cleanEmail = String(email).trim().toLowerCase();
-    const cleanLastname = String(lastname || "").trim();
+    const cleanName = String(name || "").trim();
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanLastname = String(lastname ?? lastName ?? last_name ?? "").trim();
+
+    if (!cleanName) {
+      return res.status(400).json({ error: "El nombre no puede estar vacío" });
+    }
 
     const exists = await findOne("users", "email", cleanEmail);
 
@@ -297,7 +315,6 @@ adminRouter.post("/users", async (req, res) => {
     const cleanedDescriptor = sanitizeFaceDescriptor(faceDescriptor);
     const descriptorJson = cleanedDescriptor ? JSON.stringify(cleanedDescriptor) : null;
 
-    // Validar código solo si el rol es estudiante
     const cleanedStudentCode =
       role === "student" ? sanitizeStudentCode(studentCode) : null;
 
@@ -317,7 +334,6 @@ adminRouter.post("/users", async (req, res) => {
       }
     }
 
-    // Bloquear rostro duplicado solo si viene descriptor
     if (role === "student" && cleanedDescriptor) {
       const THRESHOLD = 0.5;
       const dup = await findDuplicateFaceDescriptor(cleanedDescriptor, null);
@@ -334,8 +350,8 @@ adminRouter.post("/users", async (req, res) => {
     const id = nanoid();
 
     const user = {
-      name: String(name).trim(),
-      lastname: cleanLastname,
+      name: cleanName,
+      lastname: cleanLastname || null,
       email: cleanEmail,
       passwordHash,
       role,
@@ -350,19 +366,18 @@ adminRouter.post("/users", async (req, res) => {
     res.status(201).json({
       user: {
         id,
-        name: user.name,
-        lastname: user.lastname,
-        fullName: `${user.name || ""} ${user.lastname || ""}`.trim(),
-        email: user.email,
-        role: user.role,
-        studentCode: user.studentCode || null,
-        faceId: user.faceId || null,
-        createdAt: user.createdAt,
+        ...normalizeUserForResponse({
+          ...user,
+          id,
+        }),
       },
     });
   } catch (error) {
     console.error("Error al crear usuario:", error);
-    res.status(500).json({ error: "Error al crear usuario" });
+    res.status(500).json({
+      error: "Error al crear usuario",
+      detail: error.message,
+    });
   }
 });
 
@@ -385,13 +400,13 @@ adminRouter.put("/users/:id", async (req, res) => {
       studentCode,
     } = req.body || {};
 
+    console.log("📝 [ADMIN] Body recibido para actualizar usuario:", req.body);
+
     const user = await getById("users", id);
 
     if (!user) {
       return res.status(404).json({ error: "Usuario no encontrado" });
     }
-
-    console.log("📝 [ADMIN] Body recibido para actualizar usuario:", req.body);
 
     const patch = {};
 
@@ -405,20 +420,16 @@ adminRouter.put("/users/:id", async (req, res) => {
       patch.name = cleanName;
     }
 
-    // ✅ Acepta lastname, lastName o last_name
     if (
       typeof lastname !== "undefined" ||
       typeof lastName !== "undefined" ||
       typeof last_name !== "undefined"
     ) {
-      const cleanLastname = String(
-        lastname ?? lastName ?? last_name ?? ""
-      ).trim();
-
-      patch.lastname = cleanLastname;
+      const cleanLastname = String(lastname ?? lastName ?? last_name ?? "").trim();
+      patch.lastname = cleanLastname || null;
     }
 
-    if (role) {
+    if (typeof role !== "undefined") {
       if (!["admin", "professor", "student"].includes(role)) {
         return res.status(400).json({ error: "Rol inválido" });
       }
@@ -426,12 +437,10 @@ adminRouter.put("/users/:id", async (req, res) => {
       patch.role = role;
     }
 
-    // Rol final después de la actualización
     const finalRole = patch.role || user.role;
 
-    // Código de estudiante solo aplica para estudiantes
-    if (finalRole === "student") {
-      if (typeof studentCode !== "undefined" && studentCode !== null) {
+    if (typeof studentCode !== "undefined") {
+      if (finalRole === "student") {
         const cleaned = sanitizeStudentCode(studentCode);
 
         if (!cleaned) {
@@ -449,9 +458,10 @@ adminRouter.put("/users/:id", async (req, res) => {
         }
 
         patch.studentCode = cleaned;
+      } else {
+        patch.studentCode = null;
       }
-    } else {
-      // Si no es estudiante, se limpia el código para evitar conflictos
+    } else if (typeof role !== "undefined" && finalRole !== "student") {
       patch.studentCode = null;
     }
 
@@ -462,7 +472,6 @@ adminRouter.put("/users/:id", async (req, res) => {
     if (typeof faceDescriptor !== "undefined") {
       const cleaned = sanitizeFaceDescriptor(faceDescriptor);
 
-      // Bloquear rostro duplicado cuando se actualiza o registra rostro
       if (cleaned) {
         const THRESHOLD = 0.5;
         const dup = await findDuplicateFaceDescriptor(cleaned, id);
@@ -483,36 +492,71 @@ adminRouter.put("/users/:id", async (req, res) => {
       patch.passwordHash = await hashPassword(password);
     }
 
-    console.log("✅ [ADMIN] Patch final para guardar:", patch);
+    console.log("✅ [ADMIN] Patch final para actualizar:", patch);
 
-    await upsert("users", id, patch);
+    const updateFields = [];
+    const updateValues = [];
 
-    // ✅ Volvemos a leer desde MySQL para confirmar lo guardado realmente
+    if (Object.prototype.hasOwnProperty.call(patch, "name")) {
+      updateFields.push("name = ?");
+      updateValues.push(patch.name);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, "lastname")) {
+      updateFields.push("lastname = ?");
+      updateValues.push(patch.lastname);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, "role")) {
+      updateFields.push("role = ?");
+      updateValues.push(patch.role);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, "studentCode")) {
+      updateFields.push("student_code = ?");
+      updateValues.push(patch.studentCode);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, "faceId")) {
+      updateFields.push("face_id = ?");
+      updateValues.push(patch.faceId);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, "faceDescriptor")) {
+      updateFields.push("face_descriptor = ?");
+      updateValues.push(patch.faceDescriptor);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, "passwordHash")) {
+      updateFields.push("password_hash = ?");
+      updateValues.push(patch.passwordHash);
+    }
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: "No hay datos para actualizar" });
+    }
+
+    updateValues.push(id);
+
+    const [result] = await pool.query(
+      `UPDATE users SET ${updateFields.join(", ")} WHERE id = ?`,
+      updateValues
+    );
+
+    console.log("✅ [ADMIN] Resultado UPDATE:", result);
+
     const updatedUser = await getById("users", id);
-
-    const updatedLastname =
-      updatedUser.lastname || updatedUser.lastName || updatedUser.last_name || "";
 
     res.json({
       ok: true,
-      user: {
-        id: updatedUser.id,
-        name: updatedUser.name || "",
-        lastname: updatedLastname,
-        lastName: updatedLastname,
-        last_name: updatedLastname,
-        fullName: `${updatedUser.name || ""} ${updatedLastname}`.trim(),
-        email: updatedUser.email || "",
-        role: updatedUser.role || "",
-        studentCode: updatedUser.studentCode || null,
-        faceId: updatedUser.faceId || null,
-        faceDescriptor: updatedUser.faceDescriptor || null,
-        createdAt: updatedUser.createdAt || null,
-      },
+      user: normalizeUserForResponse(updatedUser),
     });
   } catch (error) {
     console.error("Error al actualizar usuario:", error);
-    res.status(500).json({ error: "Error al actualizar usuario" });
+    res.status(500).json({
+      error: "Error al actualizar usuario",
+      detail: error.message,
+    });
   }
 });
 
@@ -531,12 +575,13 @@ adminRouter.delete("/users/:id", async (req, res) => {
 
     await remove("users", id);
 
-    // Opcional: borrar foto local si existe
     try {
-      if (user?.faceId) {
+      const userFaceId = user.faceId || user.face_id;
+
+      if (userFaceId) {
         ensureFacesDir();
 
-        const fid = sanitizeFaceId(user.faceId);
+        const fid = sanitizeFaceId(userFaceId);
         const jpg = path.join(facesDir, `${fid}.jpg`);
         const png = path.join(facesDir, `${fid}.png`);
 

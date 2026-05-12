@@ -7,6 +7,43 @@ import { requireAuth } from "../middleware/requireAuth.js";
 
 export const evidenceImageRouter = express.Router();
 
+function getBaseDir() {
+  return path.resolve(
+    process.env.TAPO_STORAGE_DIR || path.join(process.cwd(), "storage", "tapo")
+  );
+}
+
+function normalizeSlash(value) {
+  return String(value || "").trim().replace(/\\/g, "/");
+}
+
+function getSafeImagePath(row) {
+  const baseDir = getBaseDir();
+
+  const fileNameFromDb = normalizeSlash(row.file_name);
+  const filePathFromDb = normalizeSlash(row.file_path);
+
+  let fileName = fileNameFromDb || path.posix.basename(filePathFromDb);
+
+  fileName = path.basename(fileName.replace(/\\/g, "/"));
+
+  if (!fileName) {
+    return {
+      baseDir,
+      imagePath: null,
+      fileName: null,
+    };
+  }
+
+  const imagePath = path.resolve(baseDir, fileName);
+
+  return {
+    baseDir,
+    imagePath,
+    fileName,
+  };
+}
+
 evidenceImageRouter.get(
   "/prof/evidence/:id/image",
   requireAuth(),
@@ -38,13 +75,15 @@ evidenceImageRouter.get(
         });
       }
 
-      const baseDir = path.resolve(
-        process.env.TAPO_STORAGE_DIR || "storage/tapo"
-      );
+      const { baseDir, imagePath, fileName } = getSafeImagePath(row);
 
-      const imagePath = row.file_path
-        ? path.resolve(row.file_path)
-        : path.resolve(baseDir, row.file_name);
+      if (!imagePath) {
+        return res.status(400).json({
+          ok: false,
+          message: "La evidencia no tiene archivo asociado.",
+          row,
+        });
+      }
 
       if (!imagePath.startsWith(baseDir + path.sep)) {
         return res.status(403).json({
@@ -52,29 +91,35 @@ evidenceImageRouter.get(
           message: "Ruta inválida.",
           baseDir,
           imagePath,
+          fileName,
+          rawFilePath: row.file_path,
+          rawFileName: row.file_name,
         });
       }
 
       if (!fs.existsSync(imagePath)) {
         return res.status(404).json({
           ok: false,
-          message: "Archivo no encontrado.",
+          message: "El archivo de evidencia no existe en el servidor.",
           baseDir,
           imagePath,
-          fileName: row.file_name,
+          fileName,
+          rawFilePath: row.file_path,
+          rawFileName: row.file_name,
         });
       }
 
+      res.setHeader("Cache-Control", "no-store");
       res.setHeader("Content-Type", "image/jpeg");
-      res.setHeader("Content-Disposition", `inline; filename="${row.file_name}"`);
+
       return res.sendFile(imagePath);
-    } catch (err) {
-      console.error("Error mostrando imagen de evidencia:", err);
+    } catch (error) {
+      console.error("Error al obtener imagen de evidencia:", error);
 
       return res.status(500).json({
         ok: false,
-        message: "No se pudo mostrar la imagen.",
-        detail: err?.message || String(err),
+        message: "Error al obtener imagen de evidencia.",
+        error: error.message,
       });
     }
   }

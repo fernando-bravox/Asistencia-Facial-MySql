@@ -26,56 +26,204 @@ import TapoAttendanceScanner from "../../components/TapoAttendanceScanner.jsx";
 
 const DAYS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
+function todayLocalDate() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getDayFromDate(dateStr) {
+  if (!dateStr) return null;
+
+  const [y, m, d] = String(dateStr).split("-").map(Number);
+
+  if (!y || !m || !d) return null;
+
+  return new Date(y, m - 1, d).getDay();
+}
+
+function scheduleDow(sc) {
+  return Number(sc?.dayOfWeek ?? sc?.day_of_week);
+}
+
+function scheduleStart(sc) {
+  return sc?.startTime ?? sc?.start_time ?? "";
+}
+
+function scheduleEnd(sc) {
+  return sc?.endTime ?? sc?.end_time ?? "";
+}
+
+function minutesFromHHMM(value) {
+  const [h, m] = String(value || "00:00").slice(0, 5).split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function currentHHMM() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
+function isTimeInsideSchedule(time, sc) {
+  if (!time || !sc) return false;
+
+  const value = minutesFromHHMM(time);
+  const start = minutesFromHHMM(scheduleStart(sc));
+  const end = minutesFromHHMM(scheduleEnd(sc));
+
+  return value >= start && value <= end;
+}
+
+function sortSchedulesByTime(items) {
+  return [...(items || [])].sort((a, b) =>
+    scheduleStart(a).localeCompare(scheduleStart(b))
+  );
+}
+
+function pickClosestScheduleForDate(dateStr, items) {
+  const ordered = sortSchedulesByTime(items);
+
+  if (!ordered.length) return "";
+
+  if (dateStr !== todayLocalDate()) {
+    return ordered[0].id;
+  }
+
+  const nowMin = minutesFromHHMM(currentHHMM());
+
+  const active = ordered.find((sc) => {
+    const start = minutesFromHHMM(scheduleStart(sc));
+    const end = minutesFromHHMM(scheduleEnd(sc));
+
+    return nowMin >= start && nowMin <= end;
+  });
+
+  if (active) return active.id;
+
+  const next = ordered.find((sc) => minutesFromHHMM(scheduleStart(sc)) >= nowMin);
+
+  return next?.id || ordered[0].id;
+}
+
+function defaultTimeForSchedule(dateStr, sc) {
+  if (!sc) return "";
+
+  if (dateStr !== todayLocalDate()) {
+    return scheduleStart(sc);
+  }
+
+  const now = currentHHMM();
+
+  if (isTimeInsideSchedule(now, sc)) return now;
+
+  return scheduleStart(sc);
+}
+
 export default function ProfSubjectDetail() {
   const { id } = useParams();
 
-  const [activeTab, setActiveTab] = useState("attendance"); // "attendance", "schedule", "enrollment", "settings", "stats"
-  const [filterDate, setFilterDate] = useState("");
-  const [filterScheduleId, setFilterScheduleId] = useState("all"); // "all" o id de schedule
+  const [activeTab, setActiveTab] = useState("attendance");
+  const [filterDate, setFilterDate] = useState(todayLocalDate());
+  const [filterScheduleId, setFilterScheduleId] = useState("all");
 
   const [subjects, setSubjects] = useState([]);
-  const subject = useMemo(() => subjects.find(s => s.id === id), [subjects, id]);
+  const subject = useMemo(() => subjects.find((s) => s.id === id), [subjects, id]);
 
   const [schedules, setSchedules] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [settings, setSettings] = useState({ graceMinutes: 10 });
-const [showStats, setShowStats] = useState(false);
-const [from, setFrom] = useState("");
-const [to, setTo] = useState("");
-const [stats, setStats] = useState([]);
-const [evidence, setEvidence] = useState([]);
 
-  // ✅ NUEVO: lista real de estudiantes desde Firestore
+  const [showStats, setShowStats] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [stats, setStats] = useState([]);
+  const [evidence, setEvidence] = useState([]);
+
   const [allStudents, setAllStudents] = useState([]);
   const [studentQuery, setStudentQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
 
-  const [schedForm, setSchedForm] = useState({ dayOfWeek: 1, startTime: "13:00", endTime: "15:00" });
-  const [manualForm, setManualForm] = useState({ 
-    studentId: "", 
-    status: "present",
-    date: new Date().toLocaleDateString('en-CA'),
-    scheduleId: "",
-    time: ""
+  const [schedForm, setSchedForm] = useState({
+    dayOfWeek: 1,
+    startTime: "13:00",
+    endTime: "15:00",
   });
 
-  // Efecto para ajustar la hora por defecto cuando cambia el horario
+  const [manualForm, setManualForm] = useState({
+    studentId: "",
+    status: "present",
+    date: todayLocalDate(),
+    scheduleId: "",
+    time: "",
+  });
+
+  const schedulesForFilterDate = useMemo(() => {
+    const dow = getDayFromDate(filterDate);
+
+    if (dow === null) return [];
+
+    return sortSchedulesByTime(
+      (schedules || []).filter((sc) => scheduleDow(sc) === dow)
+    );
+  }, [schedules, filterDate]);
+
+  const schedulesForManualDate = useMemo(() => {
+    const dow = getDayFromDate(manualForm.date);
+
+    if (dow === null) return [];
+
+    return sortSchedulesByTime(
+      (schedules || []).filter((sc) => scheduleDow(sc) === dow)
+    );
+  }, [schedules, manualForm.date]);
+
   useEffect(() => {
-    if (manualForm.scheduleId) {
-      const sc = schedules.find(s => s.id === manualForm.scheduleId);
-      if (sc) {
-        // Calcular 15 minutos después del inicio
-        const [h, m] = sc.startTime.split(':').map(Number);
-        const d = new Date();
-        d.setHours(h, m + 15, 0);
-        const defaultTime = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-        setManualForm(prev => ({ ...prev, time: defaultTime }));
+    const validSchedule = schedulesForManualDate.find(
+      (sc) => sc.id === manualForm.scheduleId
+    );
+
+    if (schedulesForManualDate.length === 0) {
+      if (manualForm.scheduleId || manualForm.time) {
+        setManualForm((prev) => ({
+          ...prev,
+          scheduleId: "",
+          time: "",
+        }));
       }
-    } else {
-      setManualForm(prev => ({ ...prev, time: "" }));
+
+      return;
     }
-  }, [manualForm.scheduleId, schedules]);
+
+    if (!validSchedule) {
+      const nextScheduleId = pickClosestScheduleForDate(
+        manualForm.date,
+        schedulesForManualDate
+      );
+
+      setManualForm((prev) => ({
+        ...prev,
+        scheduleId: nextScheduleId,
+        time: "",
+      }));
+
+      return;
+    }
+
+    if (!manualForm.time || !isTimeInsideSchedule(manualForm.time, validSchedule)) {
+      setManualForm((prev) => ({
+        ...prev,
+        time: defaultTimeForSchedule(prev.date, validSchedule),
+      }));
+    }
+  }, [
+    manualForm.date,
+    manualForm.scheduleId,
+    manualForm.time,
+    schedulesForManualDate,
+  ]);
 
   // ✅ abrir/cerrar escáner
   const [scanOpen, setScanOpen] = useState(false);
@@ -151,7 +299,8 @@ const [evidence, setEvidence] = useState([]);
   function labelEstado(status) {
   if (status === "late") return "Tarde";
   if (status === "present") return "Presente";
-  return status; // por si llega otro valor
+  if (status === "absent") return "Falta";
+  return status;
 }
 
 function buildRange() {
@@ -159,95 +308,119 @@ function buildRange() {
 
   const [y, mon, d] = filterDate.split("-").map(Number);
 
-  // si es "todo el día"
   if (filterScheduleId === "all") {
     const from = new Date(y, mon - 1, d, 0, 0, 0);
     const to = new Date(y, mon - 1, d, 23, 59, 59);
+
     return { from, to };
   }
 
-  const sc = schedules.find(s => s.id === filterScheduleId);
+  const sc = schedulesForFilterDate.find((s) => s.id === filterScheduleId);
+
   if (!sc) return { from: null, to: null };
 
-  const from = new Date(y, mon - 1, d, ...sc.startTime.split(':').map(Number));
-  const to = new Date(y, mon - 1, d, ...sc.endTime.split(':').map(Number), 59);
+  const [sh, sm] = scheduleStart(sc).split(":").map(Number);
+  const [eh, em] = scheduleEnd(sc).split(":").map(Number);
+
+  const from = new Date(y, mon - 1, d, sh, sm, 0);
+  const to = new Date(y, mon - 1, d, eh, em, 59);
+
   return { from, to };
 }
 
 const filteredAttendance = useMemo(() => {
   const { from, to } = buildRange();
-  if (!from || !to) return attendance;
 
-  return (attendance || []).filter(a => {
+  if (!from || !to) return attendance || [];
+
+  return (attendance || []).filter((a) => {
     const t = new Date(a.timestamp);
-    // Ajuste para comparación de fechas sin segundos si es necesario
     return t >= from && t <= to;
   });
-}, [attendance, filterDate, filterScheduleId, schedules]);
+}, [attendance, filterDate, filterScheduleId, schedulesForFilterDate]);
 
 const rowsToDisplay = useMemo(() => {
-  // Si no hay fecha de filtro, mostrar lista de estudiantes con su último registro o vacío
   if (!filterDate) {
-    return (enrollments || []).map(e => ({
+    return (enrollments || []).map((e) => ({
       enrollment: e,
-      attendance: (attendance || []).filter(a => a.studentId === e.studentId).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+      attendance: (attendance || [])
+        .filter((a) => String(a.studentId) === String(e.studentId))
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0],
     }));
   }
 
-  // Si hay una fecha seleccionada
-  const { from, to } = buildRange();
-  
-  // Caso 1: Horario específico seleccionado
   if (filterScheduleId !== "all") {
-    const sc = schedules.find(s => s.id === filterScheduleId);
-    return (enrollments || []).map(e => {
-      const att = filteredAttendance.find(a => 
-        (a.studentId === e.studentId || a.student?.id === e.studentId) &&
-        (a.sessionKey?.includes(sc.startTime) || a.sessionKey?.includes(sc.id) || true) // La sesión ya está filtrada por buildRange
+    const sc = schedulesForFilterDate.find((s) => s.id === filterScheduleId);
+
+    return (enrollments || []).map((e) => {
+      const att = filteredAttendance.find(
+        (a) =>
+          String(a.studentId) === String(e.studentId) ||
+          String(a.student?.id) === String(e.studentId)
       );
-      return { enrollment: e, attendance: att, schedule: sc };
+
+      return {
+        enrollment: e,
+        attendance: att,
+        schedule: sc,
+      };
     });
   }
 
-  // Caso 2: "Todo el día" seleccionado
-  // Queremos mostrar una fila por cada (Estudiante x Horario del día)
-  const [y, mon, day] = filterDate.split("-").map(Number);
-  const dateObj = new Date(y, mon - 1, day);
-  const dayOfWeek = dateObj.getDay();
-  
-  const schedulesToday = schedules.filter(s => Number(s.dayOfWeek) === dayOfWeek);
-
-  if (schedulesToday.length === 0) {
-    // No hay clases este día, mostrar solo estudiantes con "Falta"
-    return (enrollments || []).map(e => ({ enrollment: e, attendance: null }));
+  if (schedulesForFilterDate.length === 0) {
+    return (enrollments || []).map((e) => ({
+      enrollment: e,
+      attendance: null,
+      schedule: null,
+    }));
   }
 
+  const [y, mon, day] = filterDate.split("-").map(Number);
   const rows = [];
-  schedulesToday.forEach(sc => {
-    // Rango de tiempo para este horario específico
-    const scFrom = new Date(y, mon - 1, day, ...sc.startTime.split(':').map(Number));
-    const scTo = new Date(y, mon - 1, day, ...sc.endTime.split(':').map(Number), 59);
-    
-    enrollments.forEach(e => {
-      // Buscar asistencia que caiga en este rango de horario
-      const att = (attendance || []).find(a => {
+
+  schedulesForFilterDate.forEach((sc) => {
+    const [sh, sm] = scheduleStart(sc).split(":").map(Number);
+    const [eh, em] = scheduleEnd(sc).split(":").map(Number);
+
+    const scFrom = new Date(y, mon - 1, day, sh, sm, 0);
+    const scTo = new Date(y, mon - 1, day, eh, em, 59);
+
+    enrollments.forEach((e) => {
+      const att = (attendance || []).find((a) => {
         const t = new Date(a.timestamp);
-        const isSameStudent = (String(a.studentId) === String(e.studentId) || String(a.student?.id) === String(e.studentId));
+
+        const isSameStudent =
+          String(a.studentId) === String(e.studentId) ||
+          String(a.student?.id) === String(e.studentId);
+
         return isSameStudent && t >= scFrom && t <= scTo;
       });
-      rows.push({ enrollment: e, attendance: att, schedule: sc });
+
+      rows.push({
+        enrollment: e,
+        attendance: att,
+        schedule: sc,
+      });
     });
   });
 
   return rows.sort((a, b) => {
-    // Ordenar por nombre de estudiante y luego por hora de clase
     const nameA = (a.enrollment.student?.name || "").toLowerCase();
     const nameB = (b.enrollment.student?.name || "").toLowerCase();
-    if (nameA !== nameB) return nameA.localeCompare(nameB);
-    return a.schedule.startTime.localeCompare(b.schedule.startTime);
-  });
 
-}, [enrollments, attendance, filterDate, filterScheduleId, schedules, filteredAttendance]);
+    if (nameA !== nameB) return nameA.localeCompare(nameB);
+
+    return scheduleStart(a.schedule).localeCompare(scheduleStart(b.schedule));
+  });
+}, [
+  enrollments,
+  attendance,
+  filterDate,
+  filterScheduleId,
+  schedulesForFilterDate,
+  filteredAttendance,
+]);
+
 
   async function deleteSchedule(scheduleId) {
     const result = await Swal.fire({
@@ -364,30 +537,66 @@ const rowsToDisplay = useMemo(() => {
   // Asistencia: manual
   // =========================
   async function manualMark(e) {
-    e.preventDefault();
-    if (!manualForm.studentId) return showAlert("warning", "Atención", "Selecciona un estudiante.");
-    if (!manualForm.scheduleId) return showAlert("warning", "Atención", "Selecciona un horario.");
-    if (!manualForm.time) return showAlert("warning", "Atención", "Selecciona la hora.");
-    
-    try {
-      // Enviar la fecha y hora exactas en formato "YYYY-MM-DD HH:mm:ss"
-      // Esto evita que el servidor o el navegador apliquen conversiones de zona horaria
-      const timestamp = `${manualForm.date} ${manualForm.time}:00`;
-      
-      await api(`/api/prof/subjects/${id}/attendance/manual`, { 
-        method: "POST", 
-        body: {
-          ...manualForm,
-          timestamp
-        }
-      });
-      
-      await loadAll();
-      showAlert("success", "Éxito", "Asistencia registrada manualmente.");
-    } catch (err) {
-      showAlert("error", "Error", err.message);
-    }
+  e.preventDefault();
+
+  if (!manualForm.studentId) {
+    return showAlert("warning", "Atención", "Selecciona un estudiante.");
   }
+
+  if (!manualForm.date) {
+    return showAlert("warning", "Atención", "Selecciona una fecha.");
+  }
+
+  if (schedulesForManualDate.length === 0) {
+    return showAlert(
+      "warning",
+      "Sin horario",
+      "No hay horario de clase para la fecha seleccionada."
+    );
+  }
+
+  const selectedSchedule = schedulesForManualDate.find(
+    (sc) => sc.id === manualForm.scheduleId
+  );
+
+  if (!selectedSchedule) {
+    return showAlert(
+      "warning",
+      "Atención",
+      "Selecciona un horario válido para esa fecha."
+    );
+  }
+
+  if (!manualForm.time) {
+    return showAlert("warning", "Atención", "Selecciona la hora.");
+  }
+
+  if (!isTimeInsideSchedule(manualForm.time, selectedSchedule)) {
+    return showAlert(
+      "warning",
+      "Hora fuera de rango",
+      `La hora debe estar entre ${scheduleStart(selectedSchedule)} y ${scheduleEnd(selectedSchedule)}.`
+    );
+  }
+
+  try {
+    const timestamp = `${manualForm.date} ${manualForm.time}:00`;
+
+    await api(`/api/prof/subjects/${id}/attendance/manual`, {
+      method: "POST",
+      body: {
+        ...manualForm,
+        timestamp,
+      },
+    });
+
+    await loadAll();
+
+    showAlert("success", "Éxito", "Asistencia registrada manualmente.");
+  } catch (err) {
+    showAlert("error", "Error", err.message);
+  }
+}
 
   // =========================
   // Asistencia: aprobar/rechazar
@@ -700,172 +909,251 @@ async function loadStats() {
                 </div>
 */}
                 {/* Registro Manual Card */}
-                <div className="card glass-card">
-                  <h3 className="title text-sm">Registro Manual</h3>
-                  <form onSubmit={manualMark} className="mt-3 space-y-3">
-                    <div className="relative">
-                      <label className="label">Estudiante</label>
-                      
-                      {/* Buscador de Estudiante */}
-                      <div 
-                        className={`input flex items-center justify-between cursor-pointer ${manualDropdownOpen ? 'ring-2 ring-red-500' : ''}`}
-                        onClick={() => setManualDropdownOpen(!manualDropdownOpen)}
-                      >
-                        <span className={selectedManualStudent ? "text-brand-dark font-bold" : "text-gray-400"}>
-                          {selectedManualStudent 
-                            ? `${selectedManualStudent.name} ${selectedManualStudent.lastname || ""}` 
-                            : "-- Seleccionar Estudiante --"}
-                        </span>
-                        <FaUserGraduate className="text-gray-400" />
-                      </div>
+<div className="card glass-card">
+  <h3 className="title text-sm">Registro Manual</h3>
 
-                      {manualDropdownOpen && (
-                        <div className="absolute z-[60] left-0 right-0 mt-1 bg-white border border-gray-200 shadow-2xl rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                          <div className="p-2 bg-gray-50 border-b border-gray-100 sticky top-0">
-                            <input
-                              autoFocus
-                              className="input text-sm py-1.5"
-                              placeholder="Buscar por nombre, email o código..."
-                              value={manualQuery}
-                              onChange={(e) => setManualQuery(e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </div>
-                          
-                          <div className="max-h-[250px] overflow-y-auto">
-                            {filteredManualStudents.length > 0 ? (
-                              filteredManualStudents.map(s => (
-                                <div
-                                  key={s.id}
-                                  className={`p-3 cursor-pointer transition-all hover:bg-red-50 flex flex-col gap-0.5 ${
-                                    manualForm.studentId === s.id ? "bg-red-50 border-l-4 border-red-500" : "border-l-4 border-transparent"
-                                  }`}
-                                  onClick={() => {
-                                    setManualForm({ ...manualForm, studentId: s.id });
-                                    setManualDropdownOpen(false);
-                                    setManualQuery("");
-                                  }}
-                                >
-                                  <div className="font-bold text-sm text-brand-dark">
-                                    {s.name} {s.lastname || ""}
-                                  </div>
-                                  <div className="text-[10px] text-gray-500 uppercase tracking-wider">
-                                    {s.studentCode} • {s.email}
-                                  </div>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="p-8 text-center text-gray-400 italic text-sm">
-                                No se encontraron estudiantes matriculados
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+  <form onSubmit={manualMark} className="mt-3 space-y-3">
+    <div className="relative">
+      <label className="label">Estudiante</label>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="label">Fecha</label>
-                        <input
-                          type="date"
-                          className="input"
-                          value={manualForm.date}
-                          onChange={e => setManualForm({ ...manualForm, date: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="label">Horario</label>
-                        <select
-                          className="input"
-                          value={manualForm.scheduleId}
-                          onChange={e => setManualForm({ ...manualForm, scheduleId: e.target.value })}
-                        >
-                          <option value="">-- Seleccionar --</option>
-                          {schedules.map(sc => (
-                            <option key={sc.id} value={sc.id}>
-                              {DAYS[Number(sc.dayOfWeek)]} {sc.startTime} - {sc.endTime}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
+      <div
+        className={`input flex items-center justify-between cursor-pointer ${
+          manualDropdownOpen ? "ring-2 ring-red-500" : ""
+        }`}
+        onClick={() => setManualDropdownOpen(!manualDropdownOpen)}
+      >
+        <span
+          className={
+            selectedManualStudent ? "text-brand-dark font-bold" : "text-gray-400"
+          }
+        >
+          {selectedManualStudent
+            ? `${selectedManualStudent.name} ${selectedManualStudent.lastname || ""}`
+            : "-- Seleccionar Estudiante --"}
+        </span>
 
-                    {manualForm.scheduleId && (
-                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                        <label className="label">Hora de Registro</label>
-                        <input
-                          type="time"
-                          className="input"
-                          value={manualForm.time}
-                          min={schedules.find(s => s.id === manualForm.scheduleId)?.startTime}
-                          max={schedules.find(s => s.id === manualForm.scheduleId)?.endTime}
-                          onChange={e => setManualForm({ ...manualForm, time: e.target.value })}
-                        />
-                        <p className="text-[10px] text-gray-500 mt-1">
-                          Rango permitido: {schedules.find(s => s.id === manualForm.scheduleId)?.startTime} a {schedules.find(s => s.id === manualForm.scheduleId)?.endTime}
-                        </p>
-                      </div>
-                    )}
+        <FaUserGraduate className="text-gray-400" />
+      </div>
 
-                    <button className="btn w-full" type="submit">
-                      Guardar Manual
-                    </button>
-                  </form>
+      {manualDropdownOpen && (
+        <div className="absolute z-[60] left-0 right-0 mt-1 bg-white border border-gray-200 shadow-2xl rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="p-2 bg-gray-50 border-b border-gray-100 sticky top-0">
+            <input
+              autoFocus
+              className="input text-sm py-1.5"
+              placeholder="Buscar por nombre, email o código..."
+              value={manualQuery}
+              onChange={(e) => setManualQuery(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+
+          <div className="max-h-[250px] overflow-y-auto">
+            {filteredManualStudents.length > 0 ? (
+              filteredManualStudents.map((s) => (
+                <div
+                  key={s.id}
+                  className={`p-3 cursor-pointer transition-all hover:bg-red-50 flex flex-col gap-0.5 ${
+                    manualForm.studentId === s.id
+                      ? "bg-red-50 border-l-4 border-red-500"
+                      : "border-l-4 border-transparent"
+                  }`}
+                  onClick={() => {
+                    setManualForm({
+                      ...manualForm,
+                      studentId: s.id,
+                    });
+                    setManualDropdownOpen(false);
+                    setManualQuery("");
+                  }}
+                >
+                  <div className="font-bold text-sm text-brand-dark">
+                    {s.name} {s.lastname || ""}
+                  </div>
+
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                    {s.studentCode} • {s.email}
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div className="p-8 text-center text-gray-400 italic text-sm">
+                No se encontraron estudiantes matriculados
               </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
 
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className="label">Fecha</label>
+
+        <input
+          type="date"
+          className="input"
+          value={manualForm.date}
+          onChange={(e) =>
+            setManualForm({
+              ...manualForm,
+              date: e.target.value,
+              scheduleId: "",
+              time: "",
+            })
+          }
+        />
+      </div>
+
+      <div>
+        <label className="label">Horario</label>
+
+        <select
+          className="input"
+          value={manualForm.scheduleId}
+          disabled={schedulesForManualDate.length === 0}
+          onChange={(e) =>
+            setManualForm({
+              ...manualForm,
+              scheduleId: e.target.value,
+              time: "",
+            })
+          }
+        >
+          {schedulesForManualDate.length === 0 ? (
+            <option value="">Sin horario para este día</option>
+          ) : (
+            schedulesForManualDate.map((sc) => (
+              <option key={sc.id} value={sc.id}>
+                {DAYS[scheduleDow(sc)]} {scheduleStart(sc)} - {scheduleEnd(sc)}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+    </div>
+
+    {schedulesForManualDate.length === 0 && (
+      <p className="text-xs text-red-600 font-semibold mt-1">
+        Sin horario para esta fecha. No se puede registrar asistencia manual.
+      </p>
+    )}
+
+    {manualForm.scheduleId && (
+      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+        <label className="label">Hora de Registro</label>
+
+        <input
+          type="time"
+          className="input"
+          value={manualForm.time}
+          min={scheduleStart(
+            schedulesForManualDate.find((s) => s.id === manualForm.scheduleId)
+          )}
+          max={scheduleEnd(
+            schedulesForManualDate.find((s) => s.id === manualForm.scheduleId)
+          )}
+          onChange={(e) =>
+            setManualForm({
+              ...manualForm,
+              time: e.target.value,
+            })
+          }
+        />
+
+        <p className="text-[10px] text-gray-500 mt-1">
+          Rango permitido:{" "}
+          {scheduleStart(
+            schedulesForManualDate.find((s) => s.id === manualForm.scheduleId)
+          )}{" "}
+          a{" "}
+          {scheduleEnd(
+            schedulesForManualDate.find((s) => s.id === manualForm.scheduleId)
+          )}
+        </p>
+      </div>
+    )}
+
+    <button
+      className="btn w-full"
+      type="submit"
+      disabled={schedulesForManualDate.length === 0 || !manualForm.scheduleId}
+    >
+      Guardar Manual
+    </button>
+  </form>
+</div>
+</div>
               {/* Columna Derecha: Listado y Filtros */}
               <div className="xl:col-span-2 space-y-4">
                 
                 {/* Barra de Filtros */}
-                <div className="card glass-card py-3 px-4">
-                  <div className="flex flex-col md:flex-row gap-4 items-end">
-                    <div className="flex-1 min-w-[150px]">
-                      <label className="label flex items-center gap-1">
-                        <FaFilter className="text-xs" /> Filtrar por fecha
-                      </label>
-                      <input
-                        className="input py-1.5"
-                        type="date"
-                        value={filterDate}
-                        onChange={(e) => setFilterDate(e.target.value)}
-                      />
-                    </div>
+<div className="card glass-card py-3 px-4">
+  <div className="flex flex-col md:flex-row gap-4 items-end">
+    <div className="flex-1 min-w-[150px]">
+      <label className="label flex items-center gap-1">
+        <FaFilter className="text-xs" /> Filtrar por fecha
+      </label>
 
-                    <div className="flex-1 min-w-[200px]">
-                      <label className="label">Horario</label>
-                      <select
-                        className="input py-1.5"
-                        value={filterScheduleId}
-                        onChange={(e) => setFilterScheduleId(e.target.value)}
-                        disabled={!filterDate}
-                      >
-                        <option value="all">Todo el día</option>
-                        {schedules.map(sc => (
-                          <option key={sc.id} value={sc.id}>
-                            {DAYS[Number(sc.dayOfWeek)]} {sc.startTime} - {sc.endTime}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+      <input
+        className="input py-1.5"
+        type="date"
+        value={filterDate}
+        onChange={(e) => {
+          setFilterDate(e.target.value);
+          setFilterScheduleId("all");
+        }}
+      />
+    </div>
 
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className="btn secondary py-2 px-3"
-                        onClick={() => { setFilterDate(""); setFilterScheduleId("all"); }}
-                        title="Limpiar"
-                      >
-                        <FaTrash />
-                      </button>
-                      <button className="btn flex items-center gap-2 py-2 px-4" type="button" onClick={exportExcel}>
-                        <FaFileExcel /> Exportar
-                      </button>
-                    </div>
-                  </div>
-                </div>
+    <div className="flex-1 min-w-[200px]">
+      <label className="label">Horario</label>
 
+      <select
+        className="input py-1.5"
+        value={filterScheduleId}
+        onChange={(e) => setFilterScheduleId(e.target.value)}
+        disabled={!filterDate}
+      >
+        <option value="all">Todo el día</option>
+
+        {schedulesForFilterDate.map((sc) => (
+          <option key={sc.id} value={sc.id}>
+            {DAYS[scheduleDow(sc)]} {scheduleStart(sc)} - {scheduleEnd(sc)}
+          </option>
+        ))}
+      </select>
+
+      {filterDate && schedulesForFilterDate.length === 0 && (
+        <p className="text-xs text-red-600 font-semibold mt-1">
+          Sin horarios para esta fecha.
+        </p>
+      )}
+    </div>
+
+    <div className="flex gap-2">
+      <button
+        type="button"
+        className="btn secondary py-2 px-3"
+        onClick={() => {
+          setFilterDate(todayLocalDate());
+          setFilterScheduleId("all");
+        }}
+        title="Volver a hoy"
+      >
+        <FaTrash />
+      </button>
+
+      <button
+        className="btn flex items-center gap-2 py-2 px-4"
+        type="button"
+        onClick={exportExcel}
+      >
+        <FaFileExcel /> Exportar
+      </button>
+    </div>
+  </div>
+</div>
                 {/* Tabla de Asistencia */}
                 <div className="card glass-card p-0 overflow-hidden">
                   <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
