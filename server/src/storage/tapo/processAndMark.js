@@ -407,7 +407,7 @@ async function insertAttendance({ subjectId, studentId, timestamp, sessionKey, s
   await pool.query(
     `INSERT INTO attendance
      (id, subject_id, student_id, timestamp, method, status, approval_status, session_key, created_at)
-     VALUES (?, ?, ?, ?, 'TAPO', ?, 'AUTO', ?, ?)`,
+     VALUES (?, ?, ?, ?, 'TAPO', ?, 'approved', ?, ?)`,
     [
       id,
       String(subjectId),
@@ -418,6 +418,25 @@ async function insertAttendance({ subjectId, studentId, timestamp, sessionKey, s
       DateTime.now().setZone(TZ).toSQL({ includeOffset: false }),
     ]
   );
+}
+
+function mysqlDateTimeToEcuadorDateTime(value) {
+  if (!value) return DateTime.now().setZone(TZ);
+
+  if (value instanceof Date) {
+    // MySQL DATETIME llega como Date en UTC, pero el valor real ya representa hora Ecuador.
+    // Por eso tomamos la parte YYYY-MM-DDTHH:mm:ss sin convertirla nuevamente.
+    const localLike = value.toISOString().slice(0, 19);
+    const parsed = DateTime.fromISO(localLike, { zone: TZ });
+    return parsed.isValid ? parsed : DateTime.fromJSDate(value).setZone(TZ);
+  }
+
+  const text = String(value).trim().replace(" ", "T").slice(0, 19);
+  const parsed = DateTime.fromISO(text, { zone: TZ });
+
+  return parsed.isValid
+    ? parsed
+    : DateTime.fromJSDate(new Date(value)).setZone(TZ);
 }
 
 function computeStatusByGrace({ takenAt, startsAt, graceMinutes }) {
@@ -472,7 +491,7 @@ export async function processEvidenceAndMark({
 
   const matcher = new faceapi.FaceMatcher(labeled, threshold);
 
-  const takenAt = DateTime.fromJSDate(new Date(ev.takenAt)).setZone(TZ);
+  const takenAt = mysqlDateTimeToEcuadorDateTime(ev.takenAt);
   const sessionKey = String(ev.sessionId);
 
   const schedule = await getScheduleBySessionKey(sessionKey);
